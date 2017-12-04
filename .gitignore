@@ -1,0 +1,16 @@
+/venv
+/.cache
+/.idea
+/.eggs
+
+*.pyc
+*.pyo
+__pycache__
+
+*.egg-info
+*.egg
+*.EGG
+*.EGG-INFO
+/dist
+
+.DS_Store

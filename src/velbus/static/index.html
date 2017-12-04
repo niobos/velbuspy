@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Velbus Demo Web Client</title>
+</head>
+<body>
+<script>
+    function switchRelay(state) {
+        var address_hex = document.forms[0]['address'].value;
+        var subaddress = document.forms[0]['subaddress'].value;
+
+        var xhr = new XMLHttpRequest();
+        xmr.addEventListener("load", function (event) {
+            console.log(this);
+            console.log(event);
+        });
+        xhr.open("PUT", "http://" + document.domain + ':' + window.location.port + "/module/" +
+            address_hex + '/' + subaddress + '/relay');
+        xhr.send(state);
+    }
+</script>
+<form>
+    Switch relay at address
+    0x<input type="text" name="address" value="1f"}/>,
+    relay <input type="number" name="subaddress" value="1"/>
+    <input type="button" value="on" onClick="switchRelay('on');"/>
+    <input type="button" value="off" onClick="switchRelay('off');"/>
+</form>
+</body>
+</html>
