@@ -10,7 +10,7 @@ setup(
     python_requires=">=3.6",
     install_requires=[
         'pyserial-asyncio',
-        'websockets<4.0',  # https://github.com/channelcat/sanic/issues/1009
+        'websockets',
         'sanic',
         'bitstruct',
         'attrs>=17.3.0',
