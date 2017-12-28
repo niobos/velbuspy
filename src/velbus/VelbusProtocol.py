@@ -186,6 +186,8 @@ class VelbusSerialProtocol(VelbusProtocol):
         asyncio.get_event_loop().stop()
 
     def process_message(self, vbm: VelbusFrame):
+        super().process_message(vbm)
+
         if isinstance(vbm.message, RxBufFull):
             self.pause_writing()
         elif isinstance(vbm.message, RxBufReady):
@@ -197,8 +199,6 @@ class VelbusSerialProtocol(VelbusProtocol):
             # TODO: make this better
         elif isinstance(vbm.message, BusActive):
             pass
-
-        super().process_message(vbm)
 
     def pause_writing(self):
         logger.warning("{} : buffer full, pausing writes".format(
@@ -220,7 +220,8 @@ class VelbusSerialProtocol(VelbusProtocol):
 
 class VelbusHttpProtocol(VelbusProtocol):
     def __init__(self, request):
-        self.client_id = "HTTP:{ip_port}{path}".format(
-            ip_port=format_sockaddr(request.ip),
+        self.client_id = "HTTP:{ip}:{port}{path}".format(
+            ip=request.ip,
+            port=request.port,
             path=request.path
         )

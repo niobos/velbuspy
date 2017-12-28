@@ -113,8 +113,7 @@ logger.info("Listening for TCP on {}".format(
 # Start up Web server
 app = Sanic(__name__, log_config={})
 app.config.LOGO = None
-httpserver = app.create_server(host="0.0.0.0", port=8080,
-                               log_config={})
+httpserver = app.create_server(host="0.0.0.0", port=8080)
 asyncio.ensure_future(httpserver)
 
 
