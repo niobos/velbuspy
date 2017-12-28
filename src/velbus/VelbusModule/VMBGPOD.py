@@ -3,6 +3,7 @@ import sanic.response
 from .VelbusModule import VelbusModule
 from ._registry import register
 from ..VelbusMessage.ModuleInfo.VMBGPOD import VMBGPOD as VMBGPOD_mi
+from ..VelbusMessage.ModuleInfo.VMBGPO import VMBGPO as VMBGPO_mi
 from ..VelbusMessage.VelbusFrame import VelbusFrame
 from ..VelbusMessage.SensorTemperatureRequest import SensorTemperatureRequest
 from ..VelbusMessage.SensorTemperature import SensorTemperature
@@ -12,7 +13,7 @@ from ..VelbusMessage.TemperatureSensorStatus import TemperatureSensorStatus
 from ..VelbusProtocol import VelbusProtocol
 
 
-@register(VMBGPOD_mi)
+@register(VMBGPOD_mi, VMBGPO_mi)
 class VMBGPOD(VelbusModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
