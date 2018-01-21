@@ -28,11 +28,17 @@ def make_awaitable(ret) -> asyncio.Future:
     return f
 
 
+def give_request_ip(req: sanic.request):
+    req._socket = None
+    req._ip = '127.0.0.1'
+    req._port = 9
+
+
 @pytest.mark.asyncio
 @pytest.mark.usefixtures('clean_http_api')
 async def test_get_module():
     req = sanic.request.Request(b'/modules/01/', {}, 1.1, 'GET', None)
-    req._ip = ('127.0.0.1', 0)
+    give_request_ip(req)
 
     def velbus_query(self,
                      question: VelbusFrame,
@@ -55,7 +61,7 @@ async def test_get_module():
 @pytest.mark.usefixtures('clean_http_api')
 async def test_get_module_timeout():
     req = sanic.request.Request(b'/modules/aA/', {}, 1.1, 'GET', None)
-    req._ip = ('127.0.0.1', 0)
+    give_request_ip(req)
 
     with patch('velbus.VelbusProtocol.VelbusHttpProtocol.process_message') as velbus_pm:
         start_time = datetime.datetime.now()
@@ -80,7 +86,7 @@ async def test_get_module_timeout():
 @pytest.mark.usefixtures('clean_http_api')
 async def test_get_module_parallel_timeout():
     req = sanic.request.Request(b'/modules/aA/', {}, 1.1, 'GET', None)
-    req._ip = ('127.0.0.1', 0)
+    give_request_ip(req)
 
     with patch('velbus.VelbusProtocol.VelbusHttpProtocol.process_message'):
         start_time = datetime.datetime.now()

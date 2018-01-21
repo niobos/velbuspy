@@ -45,7 +45,9 @@ def vmb4ryno_11_http_api(request):
 def sanic_req(request):
     del request  # unused
     req = sanic.request.Request(b'/modules/01/', {}, 1.1, 'GET', None)
-    req._ip = ('127.0.0.1', 0)
+    req._socket = None
+    req._ip = '127.0.0.1'
+    req._port = 9
     return req
 
 
