@@ -105,7 +105,7 @@ internal.process_message(VelbusFrame(address=0, message=InterfaceStatusRequest()
 
 # Start up TCP server
 tcpserver = loop.run_until_complete(
-    loop.create_server(VelbusTcpProtocol, None, 8445, reuse_port=True))
+    loop.create_server(VelbusTcpProtocol, None, args.tcp_port, reuse_port=True))
 logger.info("Listening for TCP on {}".format(
     format_sockaddr(tcpserver.sockets[0].getsockname())))
 
