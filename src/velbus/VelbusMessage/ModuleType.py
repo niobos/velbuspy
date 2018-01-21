@@ -58,3 +58,10 @@ class ModuleType(VelbusMessage):
 
     def data(self) -> bytes:
         return bytes([self._command.value]) + self.module_info.data()
+
+    def validate(self):
+        # TODO
+        pass
+
+    def to_json_able(self):
+        return self.module_info.to_json_able()

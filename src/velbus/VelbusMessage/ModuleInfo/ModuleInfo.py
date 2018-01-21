@@ -1,5 +1,5 @@
 import attr
-from .._utils import bytes_to_attrs, attrs_to_bytes, AttrSerializer
+from .._utils import AttrSerializer
 
 
 @attr.s(slots=True)

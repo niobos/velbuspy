@@ -13,3 +13,6 @@ class UnknownModuleInfo(ModuleInfo):
 
     def data(self) -> bytes:
         return self._data
+
+    def validate(self):
+        return True
