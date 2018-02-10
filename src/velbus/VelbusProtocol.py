@@ -186,12 +186,12 @@ class VelbusSerialProtocol(VelbusProtocol):
         asyncio.get_event_loop().stop()
 
     def process_message(self, vbm: VelbusFrame):
-        super().process_message(vbm)
-
         if isinstance(vbm.message, RxBufFull):
             self.pause_writing()
+            return
         elif isinstance(vbm.message, RxBufReady):
             self.resume_writing()
+            return
         elif isinstance(vbm.message, BusOff):
             # we lost connectivity to the bus. Things may have changed beyond your imagination.
             logger.warning("{} : bus off, exitting...".format(self.client_id))
@@ -199,6 +199,8 @@ class VelbusSerialProtocol(VelbusProtocol):
             # TODO: make this better
         elif isinstance(vbm.message, BusActive):
             pass
+
+        super().process_message(vbm)
 
     def pause_writing(self):
         logger.warning("{} : buffer full, pausing writes".format(
