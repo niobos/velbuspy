@@ -2,6 +2,7 @@ import asyncio
 import concurrent
 import inspect
 import logging
+import time
 
 from .VelbusMessage.VelbusFrame import VelbusFrame
 from .VelbusMessage.BusActive import BusActive
@@ -53,14 +54,16 @@ class VelbusProtocol(asyncio.Protocol):
             d=' '.join(["{:02x}".format(b) for b in data])
         ))
         self.rx_buf.extend(data)
-        self.try_decode()
+        self.transport.pause_reading()
+        asyncio.ensure_future(self.try_decode())
+        # reading will be resumed at the end of try_decode()
 
-    def try_decode(self):
+    async def try_decode(self):
         while self.rx_buf:
             try:
                 vbm = VelbusFrame.from_bytes(self.rx_buf)
 
-                self.process_message(vbm)
+                await self.process_message(vbm)
 
             except BufferError:
                 break
@@ -72,8 +75,9 @@ class VelbusProtocol(asyncio.Protocol):
                 ))
                 del self.rx_buf[0:1]
                 continue
+        self.transport.resume_reading()
 
-    def process_message(self, vbm: VelbusFrame):
+    async def process_message(self, vbm: VelbusFrame):
         """
         Process a single message from this connection.
         This should usually relay the message, but you can filter messages here
@@ -86,9 +90,9 @@ class VelbusProtocol(asyncio.Protocol):
         # ^^ don't use ''.format()
         # This allows the repr(vbm) call to be omitted if the message is discarded
 
-        return self.relay_message(vbm)
+        return await self.relay_message(vbm)
 
-    def relay_message(self, vbm: VelbusFrame):
+    async def relay_message(self, vbm: VelbusFrame):
         data = vbm.to_bytes()
 
         # Order of relaying logic:
@@ -99,6 +103,7 @@ class VelbusProtocol(asyncio.Protocol):
 
         if VelbusProtocol.serial_client != self:  # don't loop back
             VelbusProtocol.serial_client.transport.write(data)
+            await asyncio.sleep(8/9600 * len(data) * 2)
 
         for c in VelbusProtocol.tcp_clients:
             if c != self:  # Don't loop back
@@ -140,7 +145,7 @@ class VelbusProtocol(asyncio.Protocol):
         self.listeners.add(message_filter)
 
         if question is not None:
-            self.process_message(question)
+            await self.process_message(question)
 
         try:
             await asyncio.wait_for(reply, timeout)
@@ -185,7 +190,7 @@ class VelbusSerialProtocol(VelbusProtocol):
         VelbusProtocol.serial_client = None
         asyncio.get_event_loop().stop()
 
-    def process_message(self, vbm: VelbusFrame):
+    async def process_message(self, vbm: VelbusFrame):
         if isinstance(vbm.message, RxBufFull):
             self.pause_writing()
             return
@@ -200,7 +205,7 @@ class VelbusSerialProtocol(VelbusProtocol):
         elif isinstance(vbm.message, BusActive):
             pass
 
-        super().process_message(vbm)
+        await super().process_message(vbm)
 
     def pause_writing(self):
         logger.warning("{} : buffer full, pausing writes".format(

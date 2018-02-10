@@ -99,7 +99,7 @@ serial_server = loop.run_until_complete(
 # send an interface status request, so we can quit right away if the bus is not active
 internal = VelbusProtocol()
 internal.client_id = "INTERNAL"
-internal.process_message(VelbusFrame(address=0, message=InterfaceStatusRequest()))
+loop.run_until_complete(internal.process_message(VelbusFrame(address=0, message=InterfaceStatusRequest())))
 # The reply will be read as soon as we enter the loop
 
 

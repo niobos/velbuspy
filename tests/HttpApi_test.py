@@ -2,7 +2,7 @@ import asyncio
 import datetime
 import pytest
 import sanic.request
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from velbus import HttpApi
 from velbus.VelbusProtocol import VelbusHttpProtocol
@@ -57,13 +57,21 @@ async def test_get_module():
         assert isinstance(mod, VMB4RYNO_mod)
 
 
+def CoroMock():
+    # https://stackoverflow.com/a/32505333/3486486
+    coro = MagicMock(name="CoroutineResult")
+    corofunc = MagicMock(name="CoroutineFunction", side_effect=asyncio.coroutine(coro))
+    corofunc.coro = coro
+    return corofunc
+
+
 @pytest.mark.asyncio
 @pytest.mark.usefixtures('clean_http_api')
 async def test_get_module_timeout():
     req = sanic.request.Request(b'/modules/aA/', {}, 1.1, 'GET', None)
     give_request_ip(req)
 
-    with patch('velbus.VelbusProtocol.VelbusHttpProtocol.process_message') as velbus_pm:
+    with patch('velbus.VelbusProtocol.VelbusHttpProtocol.process_message', new_callable=CoroMock) as velbus_pm:
         start_time = datetime.datetime.now()
         with pytest.raises(CachedTimeoutError):
             _ = await HttpApi.module_req(req, 'aA', '')
@@ -88,7 +96,7 @@ async def test_get_module_parallel_timeout():
     req = sanic.request.Request(b'/modules/aA/', {}, 1.1, 'GET', None)
     give_request_ip(req)
 
-    with patch('velbus.VelbusProtocol.VelbusHttpProtocol.process_message'):
+    with patch('velbus.VelbusProtocol.VelbusHttpProtocol.process_message', new_callable=CoroMock):
         start_time = datetime.datetime.now()
 
         async def delayed_call(delay: int):
