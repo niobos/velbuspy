@@ -76,10 +76,10 @@ async def test_get_module(sanic_req):
 
     with patch('velbus.VelbusProtocol.VelbusHttpProtocol.velbus_query', new=velbus_query):
         resp = await HttpApi.module_req(sanic_req, '11', '')
-        assert resp.body == b'1\r\n2\r\n3\r\n4\r\n5\r\n'
+        assert resp.body == b'1\r\n2\r\n3\r\n4\r\n5\r\ntype\r\n'
 
         resp = await HttpApi.module_req(sanic_req, '11', '/')
-        assert resp.body == b'1\r\n2\r\n3\r\n4\r\n5\r\n'
+        assert resp.body == b'1\r\n2\r\n3\r\n4\r\n5\r\ntype\r\n'
 
         assert velbus_query.called == 1
 

@@ -36,7 +36,7 @@ class NestedAddressVelbusModule(VelbusModule):
         """
         address = int(address)
         if address not in self.addresses:
-            raise ValueError
+            raise ValueError("Unknown address")
         return address
 
     def dispatch(self, path_info: str, request: sanic.request, bus: VelbusProtocol):
@@ -61,11 +61,17 @@ class NestedAddressVelbusModule(VelbusModule):
 
         if path_info == '/':
             # generate index
-            return sanic.response.text('\r\n'.join([str(_) for _ in self.addresses]) + '\r\n')
+            addr_list = [str(_) for _ in self.addresses]
+            addr_list.append('type')
+            return sanic.response.text('\r\n'.join(addr_list) + '\r\n')
 
         module_path = path_info[1:].split('/', 2)  # skip leading /
 
         subaddress = module_path.pop(0)
+
+        if subaddress == 'type':
+            return super().dispatch(path_info, request, bus)
+
         try:
             subaddress = self.parse_address(subaddress)
         except ValueError:
