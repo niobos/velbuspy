@@ -1,5 +1,6 @@
 command_registry = {}
 
+
 def register(cls):
     """
     Class decorator to register a command

@@ -71,9 +71,13 @@ def test_tracking():
     assert(operations[0][0].to_json_able() == {'op': 'add', 'path': '/test~0123~1456', 'value': 42})
 
 
-
 def test_non_jsonable():
     a = JsonPatchDict()
     with pytest.raises(TypeError):
         a['now'] = datetime.datetime.now()
+
+
+def test_bool():
+    a = JsonPatchDict()
+    a[0] = True
 

@@ -5,6 +5,14 @@ from .VelbusMessage import VelbusMessage
 from ._types import UInt, Enum, Index, Bool, BlindNumber, BlindTimeout
 
 
+# Two possible decodes for BlindStatus message 0xEC
+# they can be identified by the `channel` field:
+# The old modules send either {0b00000011, 0b00001100}
+# The nem modules s end either {0b00000001, 0b00000010}
+#
+# Both decodes will be tried, the "wrong" one will always raise ValueError()
+
+
 @register
 @attr.s(slots=True, auto_attribs=True)
 class BlindStatusV1(VelbusMessage):

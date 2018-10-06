@@ -5,9 +5,14 @@ from .VelbusMessage import VelbusMessage
 from ._types import Enum, UInt, Bitmap, Bool
 
 
+# Different decodes possible
+# They can be identified by their length
+# VMB8PBU sends 7 data bytes; VMB6IN sends 5 data bytes
+
+
 @register
 @attr.s(slots=True, auto_attribs=True)
-class ModuleStatus(VelbusMessage):
+class ModuleStatus8PBU(VelbusMessage):
     _priority: UInt(2) = 3
 
     class Command(Enum(8)):
@@ -38,3 +43,18 @@ class ModuleStatus(VelbusMessage):
         Winter = 2
         Holiday = 3
     program: Program = Program.No
+
+
+@register
+@attr.s(slots=True, auto_attribs=True)
+class ModuleStatus6IN(VelbusMessage):
+    _priority: UInt(2) = 3
+
+    class Command(Enum(8)):
+        ModuleStatus = 0xed
+    _command: Command = Command.ModuleStatus
+
+    input_status: Bitmap(8) = Bitmap(8).zero()
+    leds_on: Bitmap(8) = Bitmap(8).zero()
+    leds_slow_blink: Bitmap(8) = Bitmap(8).zero()
+    leds_fast_blink: Bitmap(8) = Bitmap(8).zero()
