@@ -80,4 +80,4 @@ def test_non_jsonable():
 def test_bool():
     a = JsonPatchDict()
     a[0] = True
-
+    assert a['0'] == True

@@ -1,5 +1,6 @@
 import json
 import re
+import typing
 import weakref
 from enum import Enum
 from typing import List
@@ -55,6 +56,8 @@ class JsonPatchDict(dict):
 
     Changes are notified to registered callbacks with the following signature:
         cb(op: JsonPatch)
+
+    Note that keys are automatically converted to strings (as required by JSON)
     """
 
     __slots__ = ['_parent', 'callback', '__weakref__']
@@ -71,7 +74,9 @@ class JsonPatchDict(dict):
         for cb in self.callback:
             cb(JsonPatch([op]))
 
-    def __missing__(self, key):
+    def __missing__(self, key: str):
+        key = str(key)
+
         sub = JsonPatchDict()
 
         weakself = weakref.proxy(self)  # avoid circular reference
@@ -88,7 +93,9 @@ class JsonPatchDict(dict):
         self._operation(JsonPatchOperation(JsonPatchOperation.Operation.add, [key], {}))
         return self[key]
 
-    def __setitem__(self, key, value):
+    def __setitem__(self, key: str, value: typing.Any):
+        key = str(key)
+
         if not isinstance(value, JsonPatchDict):
             # validate JSON-ability
             if hasattr(value, 'to_json_able'):
@@ -105,7 +112,9 @@ class JsonPatchDict(dict):
 
         return super().__setitem__(key, value)
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: str):
+        key = str(key)
+
         self._operation(JsonPatchOperation(JsonPatchOperation.Operation.remove, [key]))
 
         return super().__delitem__(key)
@@ -114,7 +123,9 @@ class JsonPatchDict(dict):
         self._operation(JsonPatchOperation(JsonPatchOperation.Operation.replace, [], {}))
         return super().clear()
 
-    def pop(self, key, **kwargs):
+    def pop(self, key: str, **kwargs):
+        key = str(key)
+
         if key in self:
             self._operation(JsonPatchOperation(JsonPatchOperation.Operation.remove, [key]))
 
@@ -125,7 +136,9 @@ class JsonPatchDict(dict):
         self._operation(JsonPatchOperation(JsonPatchOperation.Operation.remove, [_[0]]))
         return _
 
-    def setdefault(self, key, default=None):
+    def setdefault(self, key: str, default=None):
+        key = str(key)
+
         if key not in self:
             self._operation(JsonPatchOperation(JsonPatchOperation.Operation.add, [key], default))
 
@@ -133,8 +146,12 @@ class JsonPatchDict(dict):
 
     def update(self, *args, **kwargs):
         other = dict(*args, **kwargs)
-        for key, value in other.items():
+        other_str = {
+            str(k): v
+            for k, v in other.items()
+        }
+        for key, value in other_str.items():
             self._operation(JsonPatchOperation(JsonPatchOperation.Operation.add, [key], value))
             # add is UPSERT, so works for replace as well
 
-        return super().update(other)
+        return super().update(other_str)

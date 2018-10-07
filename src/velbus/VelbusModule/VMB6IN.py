@@ -21,13 +21,13 @@ class VMB6IN(NestedAddressVelbusModule):
 
     def message(self, vbm: VelbusFrame):
         if isinstance(vbm.message, ModuleStatus6IN):
-            for i in range(1, 6+1):
+            for i in self.addresses:
                 self.state[str(i)]['input'] = vbm.message.input_status[8-i]  # inputs are ordered LSb -> MSb
 
         elif isinstance(vbm.message, PushButtonStatus):
             push_button_status = vbm.message
 
-            for input_num in range(1, 6+1):  # 6 channels
+            for input_num in self.addresses:  # 6 channels
                 if push_button_status.just_pressed[8-input_num]:  # inputs are ordered LSb -> MSb
                     self.state[str(input_num)]['input'] = True
 
