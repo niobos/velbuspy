@@ -1,8 +1,7 @@
 import pytest
-from unittest.mock import patch, MagicMock, Mock
+from unittest.mock import patch, Mock
 
 import asyncio
-import sanic.request
 
 from velbus import HttpApi
 from velbus.VelbusProtocol import VelbusHttpProtocol
@@ -15,14 +14,7 @@ from velbus.VelbusMessage.RelayStatus import RelayStatus
 
 from velbus.VelbusModule.VMB4RYNO import VMB4RYNO as VMB4RYNO_mod
 
-
-@pytest.fixture
-def clean_http_api(request):
-    del request  # unused
-    HttpApi.modules.clear()
-    HttpApi.ws_clients.clear()
-    yield
-    # leave dirty
+from ..utils import make_awaitable
 
 
 @pytest.fixture
@@ -39,22 +31,6 @@ def vmb4ryno_11_http_api(request):
 
     yield
     # leave dirty
-
-
-@pytest.fixture
-def sanic_req(request):
-    del request  # unused
-    req = sanic.request.Request(b'/modules/01/', {}, 1.1, 'GET', None)
-    req._socket = None
-    req._ip = '127.0.0.1'
-    req._port = 9
-    return req
-
-
-def make_awaitable(ret) -> asyncio.Future:
-    f = asyncio.get_event_loop().create_future()
-    f.set_result(ret)
-    return f
 
 
 @pytest.mark.asyncio

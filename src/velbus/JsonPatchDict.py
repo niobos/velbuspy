@@ -45,6 +45,18 @@ class JsonPatch(list):
     def to_json_able(self):
         return [o.to_json_able() for o in self]
 
+    def prefixed(self, path: List[str]) -> "JsonPatch":
+        """
+        Return a new JsonPatch with the same operations prefixed by the given path
+        """
+        return JsonPatch([
+            JsonPatchOperation(
+                op=op.op,
+                path=[path, *op.path],
+                value=op.value)
+            for op in self
+        ])
+
 
 class JsonPatchDict(dict):
     """

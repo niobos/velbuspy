@@ -1,5 +1,6 @@
 import asyncio
 import concurrent
+import datetime
 import inspect
 import logging
 import time
@@ -232,3 +233,9 @@ class VelbusHttpProtocol(VelbusProtocol):
             port=request.port,
             path=request.path
         )
+
+
+class VelbusDelayedProtocol(VelbusProtocol):
+    def __init__(self, original_protocol: VelbusProtocol):
+        self.client_id = f"DELAYED<{datetime.datetime.utcnow().isoformat()}>" \
+                         f":{original_protocol.client_id}"
