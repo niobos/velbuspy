@@ -57,19 +57,6 @@ class VMB4RYNOChannel(VelbusModuleChannel):
                  # on which the timer will expire.
     }
     """
-    def __init__(self,
-                 bus: VelbusProtocol,
-                 channel: int,
-                 parent_module: VMB4RYNO,
-                 update_state_cb: Callable = lambda ops: None,
-                 ):
-        super().__init__(
-            bus=bus,
-            channel=channel,
-            parent_module=parent_module,
-            update_state_cb=update_state_cb,
-        )
-
     def message(self, vbm: VelbusFrame):
         if isinstance(vbm.message, RelayStatus):
             relay_status = vbm.message
