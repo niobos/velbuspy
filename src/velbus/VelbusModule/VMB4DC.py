@@ -6,8 +6,7 @@ import sanic.response
 import attr
 
 from ._registry import register
-from .VelbusModule import VelbusModule
-from .NestedAddressVelbusModule import NestedAddressVelbusModule2
+from .NestedAddressVelbusModule import NestedAddressVelbusModule2, VelbusModuleChannel
 from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
 from ..VelbusMessage.ModuleInfo.VMB4DC import VMB4DC as VMB4DC_MI
 from ..VelbusMessage.VelbusFrame import VelbusFrame
@@ -52,20 +51,12 @@ class VMB4DC(NestedAddressVelbusModule2):
             bus=bus,
             address=address,
             module_info=module_info,
+            channels=[1, 2, 3, 4], channel_type=VMB4DCChannel,
             update_state_cb=update_state_cb,
         )
-        self.submodules = {
-            subaddress: VMB4DCChannel(
-                bus=bus,
-                channel=subaddress,
-                parent_module=self,
-                update_state_cb=lambda ops: ops.prefixed(subaddress),
-            )
-            for subaddress in [1, 2, 3, 4]
-        }
 
 
-class VMB4DCChannel(VelbusModule):
+class VMB4DCChannel(VelbusModuleChannel):
     """single channel of VMB4DC"""
     def __init__(self,
                  bus: VelbusProtocol,
@@ -75,10 +66,10 @@ class VMB4DCChannel(VelbusModule):
                  ):
         super().__init__(
             bus=bus,
-            address=channel,
+            channel=channel,
+            parent_module=parent_module,
             update_state_cb=update_state_cb,
         )
-        self.parent: VMB4DC = parent_module
         self.queue: List[DimStep] = []
         self.queue_processing_task: asyncio.Task = asyncio.Future()
         self.queue_processing_task.set_result(None)  # Initialize to a Done "task"
@@ -99,13 +90,13 @@ class VMB4DCChannel(VelbusModule):
         if self.state is None:
             _ = await bus.velbus_query(
                 VelbusFrame(
-                    address=self.parent.address,
+                    address=self.address,
                     message=ModuleStatusRequest(
-                        channel=1 << (self.address - 1),
+                        channel=1 << (self.channel - 1),
                     ),
                 ),
                 DimmercontrollerStatus,
-                additional_check=(lambda vbm: vbm.message.channel == self.address),
+                additional_check=(lambda vbm: vbm.message.channel == self.channel),
             )
             # Do await the reply, but don't actually use it.
             # The reply will (also) be given to self.message(),
@@ -155,15 +146,15 @@ class VMB4DCChannel(VelbusModule):
 
             _ = await bus.velbus_query(
                 VelbusFrame(
-                    address=self.parent.address,
+                    address=self.address,
                     message=SetDimvalue(
-                        channel=self.address,
+                        channel=self.channel,
                         dimvalue=next_step.dimvalue,
                         dimspeed=next_step.dimspeed,
                     ),
                 ),
                 DimmercontrollerStatus,
-                additional_check=(lambda vbm: vbm.message.channel == self.address),
+                additional_check=(lambda vbm: vbm.message.channel == self.channel),
             )
 
             await asyncio.sleep(next_step.timeout)

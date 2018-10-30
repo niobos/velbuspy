@@ -60,10 +60,10 @@ async def test_get_module(sanic_req):
 
     with patch('velbus.VelbusProtocol.VelbusHttpProtocol.velbus_query', new=velbus_query):
         resp = await HttpApi.module_req(sanic_req, '11', '')
-        assert resp.body == b'1\r\n2\r\n3\r\n4\r\n5\r\ntype\r\n'
+        assert '1\r\n2\r\n3\r\n4\r\n5\r\ntype\r\n' == resp.body.decode('utf-8')
 
         resp = await HttpApi.module_req(sanic_req, '11', '/')
-        assert resp.body == b'1\r\n2\r\n3\r\n4\r\n5\r\ntype\r\n'
+        assert '1\r\n2\r\n3\r\n4\r\n5\r\ntype\r\n' == resp.body.decode('utf-8')
 
         assert velbus_query.called == 1
 
@@ -81,8 +81,10 @@ async def test_get_index(sanic_req):
 @pytest.mark.asyncio
 @pytest.mark.usefixtures('vmb4ryno_11_http_api')
 async def test_get_type(sanic_req):
-    resp = await HttpApi.module_req(sanic_req, '11', '/1/type')
-    assert b'VMB4RYNO at 0x11\r\n' in resp.body
+    resp = await HttpApi.module_req(sanic_req, '11', '/type')
+    assert 'VMB4RYNO at 0x11\r\n' in resp.body.decode('utf-8')
+    resp = await HttpApi.module_req(sanic_req, '11', '/2/type')
+    assert 'VMB4RYNOChannel at 0x11/2\r\n' in resp.body.decode('utf-8')
 
 
 @pytest.mark.asyncio
@@ -109,7 +111,7 @@ async def test_get_relay(sanic_req):
 
     with patch('velbus.VelbusProtocol.VelbusHttpProtocol.velbus_query', new=velbus_query):
         resp = await HttpApi.module_req(sanic_req, '11', '/4/relay')
-        assert resp.body == b'true'
+        assert 'true' == resp.body.decode('utf-8')
         assert velbus_query.called == 1
 
 
@@ -127,7 +129,13 @@ async def test_ws(sanic_req):
 
     HttpApi.ws_clients.add(ws)
     await HttpApi.ws_client_listen_module(VelbusHttpProtocol(sanic_req), 0x11, ws)
-    ws.send.assert_called_once_with('[{"op": "add", "path": "/11", "value": {"4": {"relay": false}}}]')
+    ws.send.assert_called_once_with('[{"op": "add", "path": "/11", "value": {'
+                                    '"1": {}, '
+                                    '"2": {}, '
+                                    '"3": {}, '
+                                    '"4": {"relay": false}, '
+                                    '"5": {}'
+                                    '}}]')
     ws.send.reset_mock()
 
     HttpApi.message(VelbusFrame(address=0x11, message=RelayStatus(
@@ -152,7 +160,7 @@ async def test_put_relay_on(sanic_req, subaddress):
     with \
             patch('velbus.VelbusProtocol.VelbusProtocol.velbus_query',
                   return_value=make_awaitable(None), autospec=True) as query, \
-            patch('velbus.VelbusModule.VMB4RYNO.VMB4RYNO.relay_GET',
+            patch('velbus.VelbusModule.VMB4RYNO.VMB4RYNOChannel.relay_GET',
                   return_value=make_awaitable(response), autospec=True):
         sanic_req.method = 'PUT'
         sanic_req.body = 'true'
@@ -178,7 +186,7 @@ async def test_put_relay_timer(sanic_req, subaddress):
     with \
             patch('velbus.VelbusProtocol.VelbusProtocol.velbus_query',
                   return_value=make_awaitable(None), autospec=True) as query, \
-            patch('velbus.VelbusModule.VMB4RYNO.VMB4RYNO.relay_GET',
+            patch('velbus.VelbusModule.VMB4RYNO.VMB4RYNOChannel.relay_GET',
                   return_value=make_awaitable(response), autospec=True):
         sanic_req.method = 'PUT'
         sanic_req.body = '7'

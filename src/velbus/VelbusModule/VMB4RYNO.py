@@ -1,11 +1,14 @@
+from typing import Callable
+
 import sanic.request
 import sanic.response
 import datetime
 
 
-from .NestedAddressVelbusModule import NestedAddressVelbusModule
+from .NestedAddressVelbusModule import NestedAddressVelbusModule2, VelbusModuleChannel
 from ._registry import register
 
+from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
 from ..VelbusMessage.ModuleInfo.VMB4RYNO import VMB4RYNO as VMB4RYNO_MI
 from ..VelbusMessage.VelbusFrame import VelbusFrame
 from ..VelbusMessage.RelayStatus import RelayStatus
@@ -18,73 +21,100 @@ from ..VelbusProtocol import VelbusProtocol
 
 
 @register(VMB4RYNO_MI)
-class VMB4RYNO(NestedAddressVelbusModule):
+class VMB4RYNO(NestedAddressVelbusModule2):
     """
     VMB4RYNO module management
 
     state = {
-        1: {
-            'relay': False
-                     # Current relay state
-                     # either a boolean (On = True, Off = False, obviously)
-                     # or an float representing the (fractional) Unix timestamp (UTC)
-                     # on which the timer will expire.
-        },
+        "1": {...}  # channel state
         ...
     }
     """
+    def __init__(self,
+                 bus: VelbusProtocol,
+                 address: int,
+                 module_info: ModuleInfo = None,
+                 update_state_cb: Callable = lambda ops: None
+                 ):
+        super().__init__(
+            bus=bus,
+            address=address,
+            module_info=module_info,
+            update_state_cb=update_state_cb,
+            channels=[1, 2, 3, 4, 5], channel_type=VMB4RYNOChannel,
+        )
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.addresses = [1, 2, 3, 4, 5]
+
+class VMB4RYNOChannel(VelbusModuleChannel):
+    """
+    VMB4RYNO channel
+
+    state = {
+        'relay': False
+                 # Current relay state
+                 # either a boolean (On = True, Off = False, obviously)
+                 # or an float representing the (fractional) Unix timestamp (UTC)
+                 # on which the timer will expire.
+    }
+    """
+    def __init__(self,
+                 bus: VelbusProtocol,
+                 channel: int,
+                 parent_module: VMB4RYNO,
+                 update_state_cb: Callable = lambda ops: None,
+                 ):
+        super().__init__(
+            bus=bus,
+            channel=channel,
+            parent_module=parent_module,
+            update_state_cb=update_state_cb,
+        )
 
     def message(self, vbm: VelbusFrame):
         if isinstance(vbm.message, RelayStatus):
             relay_status = vbm.message
 
             if relay_status.delay_timer == 0:
-                self.state[str(relay_status.channel)]['relay'] = \
+                self.state['relay'] = \
                     (relay_status.relay_status == relay_status.RelayStatus.On)
 
             else:  # timer running
                 timeout = (datetime.datetime.now()
                            + datetime.timedelta(seconds=relay_status.delay_timer)
                            ).timestamp()
-                self.state[str(relay_status.channel)]['relay'] = timeout
+                self.state['relay'] = timeout
 
         elif isinstance(vbm.message, PushButtonStatus):
             push_button_status = vbm.message
 
-            for relay in range(1, 5+1):  # 5 channels (4 + 1 virtual)
-                if push_button_status.just_pressed[8-relay]:  # relays are ordered LSb -> MSb
-                    if isinstance(self.state[str(relay)]['relay'], bool):
-                        self.state[str(relay)]['relay'] = True
-                    # else: don't overwrite a running timer.
+            if push_button_status.just_pressed[8-self.channel]:  # relays are ordered LSb -> MSb
+                if isinstance(self.state['relay'], bool):
+                    self.state['relay'] = True
+                # else: don't overwrite a running timer.
 
-                if push_button_status.just_released[8-relay]:
-                    self.state[str(relay)]['relay'] = False
+            if push_button_status.just_released[8-self.channel]:
+                self.state['relay'] = False
 
-    async def _get_relay_state(self, bus: VelbusProtocol, relay_num: int):
-        if str(relay_num) not in self.state:
+    async def _get_relay_state(self, bus: VelbusProtocol):
+        if 'relay' not in self.state:
             _ = await bus.velbus_query(
                 VelbusFrame(
                     address=self.address,
                     message=ModuleStatusRequest(
-                        channel=1 << (relay_num - 1),
+                        channel=1 << (self.channel - 1),
                     ),
                 ),
                 RelayStatus,
-                additional_check=(lambda vbm: vbm.message.relay == relay_num),
+                additional_check=(lambda vbm: vbm.message.relay == self.channel),
             )
             # Do await the reply, but don't actually use it.
             # The reply will (also) be given to self.message(),
             # so by the time we get here, the cache will be up-to-date
             # may raise
 
-        return self.state[str(relay_num)]
+        return self.state
 
     async def relay_GET(self,
-                        subaddress: int,
                         path_info: str,
                         request: sanic.request,
                         bus: VelbusProtocol
@@ -99,12 +129,11 @@ class VMB4RYNO(NestedAddressVelbusModule):
         if path_info != '':
             return sanic.response.text('Not found', status=404)
 
-        status = await self._get_relay_state(bus, subaddress)
+        status = await self._get_relay_state(bus)
 
         return sanic.response.json(status['relay'])
 
     async def relay_PUT(self,
-                        subaddress: int,
                         path_info: str,
                         request: sanic.request,
                         bus: VelbusProtocol
@@ -121,11 +150,11 @@ class VMB4RYNO(NestedAddressVelbusModule):
             message = SwitchRelay(
                 command=SwitchRelay.Command.SwitchRelayOn if requested_status
                 else SwitchRelay.Command.SwitchRelayOff,
-                channel=subaddress,
+                channel=self.channel,
             )
         elif isinstance(requested_status, int):
             message = StartRelayTimer(
-                channel=subaddress,
+                channel=self.channel,
                 delay_time=requested_status,
             )
         else:
@@ -137,10 +166,10 @@ class VMB4RYNO(NestedAddressVelbusModule):
                 message=message,
             ),
             RelayStatus,
-            additional_check=(lambda vbm: vbm.message.relay == subaddress),
+            additional_check=(lambda vbm: vbm.message.relay == self.channel),
         )
         # Wait for reply, but don't actually use it
         # self.message() will be called with the same reply. Processing happens there
         # May raise
 
-        return await self.relay_GET(subaddress, path_info, request, bus)
+        return await self.relay_GET(path_info, request, bus)

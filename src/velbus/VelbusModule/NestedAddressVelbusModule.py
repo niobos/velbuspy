@@ -1,7 +1,9 @@
+import weakref
+
 import sanic.response
 import sanic.request
 
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Union, Awaitable, Iterable
 
 from .VelbusModule import VelbusModule
 from ..VelbusProtocol import VelbusProtocol
@@ -103,20 +105,29 @@ class NestedAddressVelbusModule(VelbusModule):
 
 
 class NestedAddressVelbusModule2(VelbusModule):
-    def __init__(self,
-                 bus: VelbusProtocol,
-                 address: int,
-                 module_info: ModuleInfo,
-                 update_state_cb: Callable = lambda op, path, value: None):
+    def __init__(
+            self,
+            bus: VelbusProtocol,
+            address: int,
+            module_info: ModuleInfo,
+            channels: Iterable[Any],
+            channel_type: type,
+            update_state_cb: Callable = lambda op, path, value: None,
+            ):
         super().__init__(bus=bus,
                          address=address,
                          module_info=module_info,
                          update_state_cb=update_state_cb)
 
-        if not hasattr(self, 'submodules'):
-            # dict of submodules with their addresses
-            # Wrapped in hasattr to catch the mistake of calling super() after setting self.submodules
-            self.submodules: Dict[str, VelbusModule] = {}
+        self.submodules = {}
+        for channel in channels:
+            self.submodules[channel] = channel_type(
+                bus=bus,
+                channel=channel,
+                parent_module=self,
+                update_state_cb=lambda ops: None,  # noop
+            )
+            self.submodules[channel].state = self.state[channel]
 
     def parse_address(self, address: str) -> Any:
         """
@@ -137,10 +148,13 @@ class NestedAddressVelbusModule2(VelbusModule):
         """
         Optionally override to only pass messages to the correct submodule.
 
-        This default implementation passes every message to every submodule.
+        This default implementation tries to do this naively
         """
-        for submodule in self.submodules.values():
-            submodule.message(vbm)
+        if hasattr(vbm.message, 'channel'):
+            self.submodules[vbm.message.channel].message(vbm)
+        else:
+            for submodule in self.submodules.values():
+                submodule.message(vbm)
 
     def dispatch(self, path_info: str, request: sanic.request, bus: VelbusProtocol):
         """
@@ -164,7 +178,7 @@ class NestedAddressVelbusModule2(VelbusModule):
 
         if path_info == '/':
             # generate index
-            addr_list = [str(_) for _ in self.addresses]
+            addr_list = [str(_) for _ in self.submodules.keys()]
             addr_list.append('type')
             return sanic.response.text('\r\n'.join(addr_list) + '\r\n')
 
@@ -202,3 +216,34 @@ class NestedAddressVelbusModule2(VelbusModule):
             ),
                 status=404
             )
+
+
+class VelbusModuleChannel(VelbusModule):
+    def __init__(self,
+                 bus: VelbusProtocol,
+                 channel: int,
+                 parent_module: VelbusModule,
+                 update_state_cb: Callable = lambda ops: None,
+                 ):
+        super().__init__(
+            bus=bus,
+            address=parent_module.address,
+            update_state_cb=update_state_cb,
+        )
+        self.channel = channel
+        self.parent = weakref.proxy(parent_module)  # avoid circular dependencies
+
+    def type_GET(self,
+                 path_info: str,
+                 request: sanic.request,
+                 bus: VelbusProtocol,
+                 *args, **kwargs
+                 ) -> Union[sanic.response.HTTPResponse, Awaitable[sanic.response.HTTPResponse]]:
+        del request, bus, args, kwargs  # unused
+
+        if path_info != '':
+            return sanic.response.text('Not found\r\n', status=404)
+
+        return sanic.response.text(
+            f"{self.__class__.__name__} at 0x{self.address:02x}/{self.channel}\r\n"
+        )

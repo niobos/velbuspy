@@ -52,7 +52,7 @@ class JsonPatch(list):
         return JsonPatch([
             JsonPatchOperation(
                 op=op.op,
-                path=[path, *op.path],
+                path=[*path, *op.path],
                 value=op.value)
             for op in self
         ])
