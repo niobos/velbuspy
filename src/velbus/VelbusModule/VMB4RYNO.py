@@ -43,14 +43,14 @@ class VMB4RYNO(NestedAddressVelbusModule):
             relay_status = vbm.message
 
             if relay_status.delay_timer == 0:
-                self.state[str(relay_status.relay)]['relay'] = \
+                self.state[str(relay_status.channel)]['relay'] = \
                     (relay_status.relay_status == relay_status.RelayStatus.On)
 
             else:  # timer running
                 timeout = (datetime.datetime.now()
                            + datetime.timedelta(seconds=relay_status.delay_timer)
                            ).timestamp()
-                self.state[str(relay_status.relay)]['relay'] = timeout
+                self.state[str(relay_status.channel)]['relay'] = timeout
 
         elif isinstance(vbm.message, PushButtonStatus):
             push_button_status = vbm.message
@@ -121,11 +121,11 @@ class VMB4RYNO(NestedAddressVelbusModule):
             message = SwitchRelay(
                 command=SwitchRelay.Command.SwitchRelayOn if requested_status
                 else SwitchRelay.Command.SwitchRelayOff,
-                relay=subaddress,
+                channel=subaddress,
             )
         elif isinstance(requested_status, int):
             message = StartRelayTimer(
-                relay=subaddress,
+                channel=subaddress,
                 delay_time=requested_status,
             )
         else:

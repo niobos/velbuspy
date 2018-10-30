@@ -14,7 +14,7 @@ class RelayStatus(VelbusMessage):
         RelayStatus = 0xfb
     _command: Command = Command.RelayStatus
 
-    relay: Index(8) = 1
+    channel: Index(8) = 1
 
     disable_inhibit_force: DisableInhibitForced = DisableInhibitForced.Normal
 

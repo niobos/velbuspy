@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch, Mock
 
 import asyncio
+import sanic.response
 
 from velbus import HttpApi
 from velbus.VelbusProtocol import VelbusHttpProtocol
@@ -11,10 +12,17 @@ from velbus.VelbusMessage.ModuleType import ModuleType
 from velbus.VelbusMessage.ModuleInfo.VMB4RYNO import VMB4RYNO as VMB4RYNO_mi
 from velbus.VelbusMessage.ModuleStatusRequest import ModuleStatusRequest
 from velbus.VelbusMessage.RelayStatus import RelayStatus
+from velbus.VelbusMessage.SwitchRelay import SwitchRelay
+from velbus.VelbusMessage.StartRelayTimer import StartRelayTimer
 
 from velbus.VelbusModule.VMB4RYNO import VMB4RYNO as VMB4RYNO_mod
 
 from ..utils import make_awaitable
+
+
+@pytest.fixture(params=[1, 2, 3, 4, 5])
+def subaddress(request):
+    return request.param
 
 
 @pytest.fixture
@@ -92,7 +100,7 @@ async def test_get_relay(sanic_req):
             channel=1 << (4 - 1),
         ))
         ret = VelbusFrame(address=0x11, message=RelayStatus(
-                relay=4,
+                channel=4,
                 relay_status=RelayStatus.RelayStatus.On,
             ))
         HttpApi.modules[0x11].result().message(ret)
@@ -109,7 +117,7 @@ async def test_get_relay(sanic_req):
 @pytest.mark.usesfixtures('vmb4ryno_11_http_api')
 async def test_ws(sanic_req):
     HttpApi.message(VelbusFrame(address=0x11, message=RelayStatus(
-        relay=4,
+        channel=4,
         relay_status=RelayStatus.RelayStatus.Off,
     )))
 
@@ -123,15 +131,66 @@ async def test_ws(sanic_req):
     ws.send.reset_mock()
 
     HttpApi.message(VelbusFrame(address=0x11, message=RelayStatus(
-        relay=4,
+        channel=4,
         relay_status=RelayStatus.RelayStatus.On,
     )))
     ws.send.assert_called_once_with('[{"op": "add", "path": "/11/4/relay", "value": true}]')
     ws.send.reset_mock()
 
     HttpApi.message(VelbusFrame(address=0x11, message=RelayStatus(
-        relay=4,
+        channel=4,
         relay_status=RelayStatus.RelayStatus.Off,
     )))
     ws.send.assert_called_once_with('[{"op": "add", "path": "/11/4/relay", "value": false}]')
     ws.send.reset_mock()
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('vmb4ryno_11_http_api')
+async def test_put_relay_on(sanic_req, subaddress):
+    response = sanic.response.HTTPResponse(body='magic')
+    with \
+            patch('velbus.VelbusProtocol.VelbusProtocol.velbus_query',
+                  return_value=make_awaitable(None), autospec=True) as query, \
+            patch('velbus.VelbusModule.VMB4RYNO.VMB4RYNO.relay_GET',
+                  return_value=make_awaitable(response), autospec=True):
+        sanic_req.method = 'PUT'
+        sanic_req.body = 'true'
+        resp = await HttpApi.module_req(sanic_req, '11', f"/{subaddress}/relay")
+        assert 200 == resp.status
+        assert 'magic' == resp.body.decode('utf-8')
+
+        query.assert_called_once()
+        assert VelbusFrame(
+                address=0x11,
+                message=SwitchRelay(
+                    command=SwitchRelay.Command.SwitchRelayOn,
+                    channel=subaddress,
+
+                ),
+            ) == query.call_args[0][1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('vmb4ryno_11_http_api')
+async def test_put_relay_timer(sanic_req, subaddress):
+    response = sanic.response.HTTPResponse(body='magic')
+    with \
+            patch('velbus.VelbusProtocol.VelbusProtocol.velbus_query',
+                  return_value=make_awaitable(None), autospec=True) as query, \
+            patch('velbus.VelbusModule.VMB4RYNO.VMB4RYNO.relay_GET',
+                  return_value=make_awaitable(response), autospec=True):
+        sanic_req.method = 'PUT'
+        sanic_req.body = '7'
+        resp = await HttpApi.module_req(sanic_req, '11', f"/{subaddress}/relay")
+        assert 200 == resp.status
+        assert 'magic' == resp.body.decode('utf-8')
+
+        query.assert_called_once()
+        assert VelbusFrame(
+                address=0x11,
+                message=StartRelayTimer(
+                    channel=subaddress,
+                    delay_time=7,
+                ),
+            ) == query.call_args[0][1]

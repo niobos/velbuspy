@@ -17,7 +17,7 @@ from velbus.VelbusMessage.SwitchRelay import SwitchRelay
                 'type': 'SwitchRelay',
                 'properties': {
                     'command': {'name': 'SwitchRelayOff', 'value': 1},
-                    'relay': 1,
+                    'channel': 1,
                 }
             },
         ),
@@ -25,13 +25,13 @@ from velbus.VelbusMessage.SwitchRelay import SwitchRelay
             b'\x0f\xf8\x00\x02\x02\x04\xf1\x04',
             SwitchRelay(
                 command=SwitchRelay.Command.SwitchRelayOn,
-                relay=3,
+                channel=3,
             ),
             {
                 'type': 'SwitchRelay',
                 'properties': {
                     'command': {'name': 'SwitchRelayOn', 'value': 2},
-                    'relay': 3,
+                    'channel': 3,
                 }
             },
         ),

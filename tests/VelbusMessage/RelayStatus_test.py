@@ -12,7 +12,7 @@ from velbus.VelbusMessage.RelayStatus import RelayStatus
         VelbusFrame(
             address=0x20,
             message=RelayStatus(
-                relay=2,
+                channel=2,
                 relay_status=RelayStatus.RelayStatus.On,
                 led_status=LedStatus.On,
             ),

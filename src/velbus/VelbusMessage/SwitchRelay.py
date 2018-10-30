@@ -15,4 +15,4 @@ class SwitchRelay(VelbusMessage):
         SwitchRelayOn = 0x02
     command: Command = Command.SwitchRelayOff
 
-    relay: Index(8) = 1
+    channel: Index(8) = 1
