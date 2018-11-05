@@ -4,14 +4,12 @@ import sanic.request
 import sanic.response
 
 from ._registry import register
-from ._utils import validate_channel_from_pathinfo
 from .NestedAddressVelbusModule import NestedAddressVelbusModule
 from ..VelbusMessage.VelbusFrame import VelbusFrame
 from ..VelbusMessage._types import BlindTimeout
 from ..VelbusMessage.ModuleInfo.VMB2BL import VMB2BL as VMB2BL_MI
 from ..VelbusMessage.ModuleStatusRequest import ModuleStatusRequest
 from ..VelbusMessage.BlindStatus import BlindStatusV1
-from ..VelbusMessage.SetBlindPosition import SetBlindPosition
 from ..VelbusMessage.SwitchBlind import SwitchBlindV1
 from ..VelbusMessage.SwitchBlindOff import SwitchBlindOffV1
 
