@@ -119,7 +119,7 @@ class VelbusProtocol(asyncio.Protocol):
                            question: VelbusFrame,
                            response_type: type,
                            response_address: int = None,
-                           timeout: int = 2,
+                           timeout: float = 2,
                            additional_check=(lambda vbm: True)):
         """
         Send a message on the bus and expect an answer
@@ -151,8 +151,8 @@ class VelbusProtocol(asyncio.Protocol):
         try:
             await asyncio.wait_for(reply, timeout)
             return reply.result()
-        except concurrent.futures._base.TimeoutError:
-            raise TimeoutError
+        except asyncio.TimeoutError:
+            raise TimeoutError()
         finally:
             self.listeners.remove(message_filter)
 

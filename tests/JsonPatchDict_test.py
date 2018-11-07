@@ -7,10 +7,11 @@ from JsonPatchDict import JsonPatchDict, JsonPatchOperation, JsonPatch
 
 def test_memory_leak():
     a = JsonPatchDict()
-    assert(len(gc.get_referrers(a)) == 1)
+    orig_referals = len(gc.get_referrers(a))
 
     a['foo']['bar'] = 42  # should create weak references only
-    assert(len(gc.get_referrers(a)) == 1)
+    a['baz']['world'] = 43
+    assert orig_referals == len(gc.get_referrers(a))
 
 
 def test_nested():
