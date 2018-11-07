@@ -1,30 +1,38 @@
 import json
-import random
 
 import pytest
 import asyncio
-from unittest.mock import patch
 import sanic.response
 import sanic.exceptions
 
 from velbus import HttpApi
 from velbus.VelbusMessage.VelbusFrame import VelbusFrame
+from velbus.VelbusMessage.ModuleTypeRequest import ModuleTypeRequest
+from velbus.VelbusMessage.ModuleType import ModuleType
 from velbus.VelbusMessage.ModuleInfo.VMB4DC import VMB4DC as VMB4DC_mi
 from velbus.VelbusMessage.SetDimvalue import SetDimvalue
+from velbus.VelbusMessage.DimmercontrollerStatus import DimmercontrollerStatus
 from velbus.VelbusModule.VMB4DC import VMB4DC as VMB4DC_mod
 
-from ..utils import make_awaitable
+
+def VMB4DC_module_info_exchange(module_address):
+    return (
+        VelbusFrame(
+            address=module_address,
+            message=ModuleTypeRequest(),
+        ).to_bytes(),
+        VelbusFrame(
+            address=module_address,
+            message=ModuleType(
+                module_info=VMB4DC_mi(),
+            ),
+        ).to_bytes()
+    )
 
 
 @pytest.fixture(params=[1, 2, 3, 4])
-def subaddress(request):
+def channel(request):
     return request.param
-
-
-@pytest.fixture(params=[0, 1])  # test with at least 2 values
-def magic_str(request):
-    start = 1E6 * request.param
-    return str(random.randint(start, start + 1E6))
 
 
 @pytest.fixture
@@ -44,241 +52,291 @@ def vmb4dc_11_http_api(request):
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures('vmb4dc_11_http_api')
-async def test_put_dimvalue_int(sanic_req, subaddress):
-    with patch('velbus.VelbusProtocol.VelbusProtocol.velbus_query',
-               return_value=make_awaitable(None), autospec=True) as query:
-        sanic_req.method = 'PUT'
-        sanic_req.body = '100'
-        resp = await HttpApi.module_req(sanic_req, '11', f"/{subaddress}/dimvalue")
-        assert 202 == resp.status
-
-        await HttpApi.modules[0x11].result().submodules[subaddress].queue_processing_task
-        query.assert_called_once()
-        assert VelbusFrame(
-                address=0x11,
+async def test_put_dimvalue_int(generate_sanic_request, mock_velbus, module_address, channel):
+    mock_velbus.set_expected_conversation([
+        VMB4DC_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
                 message=SetDimvalue(
-                    channel=subaddress,
+                    channel=channel,
                     dimvalue=100,
                     dimspeed=0,
                 ),
-            ) == query.call_args[0][1]
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=DimmercontrollerStatus(
+                    channel=channel,
+                    dimvalue=100,
+                ),
+            ).to_bytes()
+         ),
+    ])
+
+    sanic_req = generate_sanic_request(method='PUT', body='100')
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/dimvalue")
+    assert 202 == resp.status
+
+    await HttpApi.modules[module_address].result().submodules[channel].queue_processing_task
+    mock_velbus.assert_conversation_happened_exactly()
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures('vmb4dc_11_http_api')
-async def test_put_dimvalue_invalid_json(sanic_req):
-    def velbus_query(self,
-                     question: VelbusFrame,
-                     response_type: type,
-                     response_address: int = None,
-                     timeout: int = 2,
-                     additional_check=(lambda vbm: True)):
-        del self, response_type, response_address, timeout, additional_check  # unused
-        velbus_query.called += 1
-        assert VelbusFrame(
-                address=0x11,
-                message=None,
-            ) == question
-        return make_awaitable(None)
-    velbus_query.called = 0
-
-    with patch('velbus.VelbusProtocol.VelbusHttpProtocol.velbus_query', new=velbus_query):
-        sanic_req.method = 'PUT'
-        sanic_req.body = '{"Malformed JSON": true'
-        with pytest.raises(sanic.exceptions.InvalidUsage):
-            _ = await HttpApi.module_req(sanic_req, '11', '/4/dimvalue')
-        assert 0 == velbus_query.called
+async def test_put_dimvalue_invalid_json(generate_sanic_request, mock_velbus, module_address, channel):
+    mock_velbus.set_expected_conversation([
+        VMB4DC_module_info_exchange(module_address),
+    ])
+    sanic_req = generate_sanic_request(
+        method='PUT',
+        body='{"Malformed JSON": true',
+    )
+    with pytest.raises(sanic.exceptions.InvalidUsage):
+        _ = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f'/{channel}/dimvalue')
+    mock_velbus.assert_conversation_happened_exactly()
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures('vmb4dc_11_http_api')
-async def test_put_dimvalue_dict(sanic_req, subaddress):
-    with patch('velbus.VelbusProtocol.VelbusProtocol.velbus_query',
-               return_value=make_awaitable(None), autospec=True) as query:
-        sanic_req.method = 'PUT'
-        sanic_req.body = json.dumps({"dimvalue": 100, "dimspeed": 5})
-        resp = await HttpApi.module_req(sanic_req, '11', f"/{subaddress}/dimvalue")
-        assert 202 == resp.status
-
-        await HttpApi.modules[0x11].result().submodules[subaddress].queue_processing_task
-        query.assert_called_once()
-        assert VelbusFrame(
-            address=0x11,
-            message=SetDimvalue(
-                channel=subaddress,
-                dimvalue=100,
-                dimspeed=5,
-            ),
-        ) == query.call_args[0][1]
-
-
-@pytest.mark.asyncio
-@pytest.mark.usefixtures('vmb4dc_11_http_api')
-async def test_put_dimvalue_dict_invalid(sanic_req):
-    with patch('velbus.VelbusProtocol.VelbusHttpProtocol.velbus_query',
-               return_value=make_awaitable(None), autospec=True) as query:
-        sanic_req.method = 'PUT'
-        sanic_req.body = json.dumps({"dimvalue": 100, "foobar": True})
-        resp = await HttpApi.module_req(sanic_req, '11', '/4/dimvalue')
-        assert resp.status == 400
-        query.assert_not_called()
-
-
-@pytest.mark.asyncio
-@pytest.mark.usefixtures('vmb4dc_11_http_api')
-async def test_put_dimvalue_list_single(sanic_req, subaddress):
-    with patch('velbus.VelbusProtocol.VelbusProtocol.velbus_query',
-               return_value=make_awaitable(None), autospec=True) as query:
-        sanic_req.method = 'PUT'
-        sanic_req.body = json.dumps([{"dimvalue": 100, "dimspeed": 5}])
-        resp = await HttpApi.module_req(sanic_req, '11', f"/{subaddress}/dimvalue")
-        assert 202 == resp.status
-
-        await HttpApi.modules[0x11].result().submodules[subaddress].queue_processing_task
-        query.assert_called_once()
-        assert VelbusFrame(
-                address=0x11,
+async def test_put_dimvalue_dict(generate_sanic_request, mock_velbus, module_address, channel):
+    mock_velbus.set_expected_conversation([
+        VMB4DC_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
                 message=SetDimvalue(
-                    channel=subaddress,
+                    channel=channel,
                     dimvalue=100,
                     dimspeed=5,
+                )
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=DimmercontrollerStatus(
+                    channel=channel,
+                    dimvalue=100,
                 ),
-            ) == query.call_args[0][1]
+            ).to_bytes(),
+        ),
+    ])
+
+    sanic_req = generate_sanic_request(
+        method='PUT',
+        body=json.dumps({"dimvalue": 100, "dimspeed": 5})
+    )
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/dimvalue")
+    assert 202 == resp.status
+
+    await HttpApi.modules[module_address].result().submodules[channel].queue_processing_task
+    mock_velbus.assert_conversation_happened_exactly()
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures('vmb4dc_11_http_api')
-async def test_put_dimvalue_list(sanic_req, subaddress, magic_str):
-    fake_sleep_is_called = None
-    fake_sleep_returns = None
+async def test_put_dimvalue_dict_invalid(generate_sanic_request, mock_velbus, module_address, channel):
+    mock_velbus.set_expected_conversation([
+        VMB4DC_module_info_exchange(module_address),
+    ])
 
-    def setup_fake_sleep():
-        nonlocal fake_sleep_is_called, fake_sleep_returns
-        fake_sleep_is_called = asyncio.get_event_loop().create_future()
-        fake_sleep_returns = None
+    sanic_req = generate_sanic_request(
+        method='PUT',
+        body=json.dumps({"dimvalue": 100, "foobar": True}),
+    )
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f'/{channel}/dimvalue')
+    assert resp.status == 400
+    mock_velbus.assert_conversation_happened_exactly()
 
-    def fake_sleep(amount):
-        nonlocal fake_sleep_is_called, fake_sleep_returns
-        fake_sleep_is_called.set_result(True)
-        fake_sleep_returns = asyncio.get_event_loop().create_future()
-        return fake_sleep_returns
 
-    with \
-            patch('velbus.VelbusProtocol.VelbusProtocol.velbus_query',
-                  return_value=make_awaitable(None), autospec=True) as query, \
-            patch('asyncio.sleep', side_effect=fake_sleep) as fsleep:
-        sanic_req.method = 'PUT'
-        sanic_req.body = json.dumps([
+@pytest.mark.asyncio
+async def test_put_dimvalue_list_single(generate_sanic_request, mock_velbus, module_address, channel):
+    mock_velbus.set_expected_conversation([
+        VMB4DC_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
+                message=SetDimvalue(
+                    channel=channel,
+                    dimvalue=100,
+                    dimspeed=5,
+                )
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=DimmercontrollerStatus(
+                    channel=channel,
+                    dimvalue=100,
+                ),
+            ).to_bytes(),
+        ),
+    ])
+
+    sanic_req = generate_sanic_request(
+        method='PUT',
+        body=json.dumps([{"dimvalue": 100, "dimspeed": 5}])
+    )
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/dimvalue")
+    assert 202 == resp.status
+
+    await HttpApi.modules[module_address].result().submodules[channel].queue_processing_task
+    mock_velbus.assert_conversation_happened_exactly()
+
+
+@pytest.mark.asyncio
+async def test_put_dimvalue_list(generate_sanic_request, mock_velbus, module_address, channel,
+                                 fake_asyncio_sleep):
+    mock_velbus.set_expected_conversation([
+        VMB4DC_module_info_exchange(module_address),
+    ])
+
+    sanic_req = generate_sanic_request(
+        method='PUT',
+        body=json.dumps([
             {"dimvalue": 100, "timeout": 1},
             {"dimvalue": 20}
         ])
-        resp = await HttpApi.module_req(sanic_req, '11', f"/{subaddress}/dimvalue")
-        query.assert_not_called()
-        assert 400 == resp.status
+    )
+    # Do call to wrong endpoint
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/dimvalue")
+    mock_velbus.assert_conversation_happened_exactly()
+    assert 400 == resp.status
 
-        setup_fake_sleep()
-        resp = await HttpApi.module_req(sanic_req, '11', f"/{subaddress}/e_dimvalue")
-        assert 202 == resp.status
-        # process_queue is now running async
-        # It will block on the fake_sleep future to be resolved
-
-        await fake_sleep_is_called
-        # We are at the first sleep() call, inspect
-        fsleep.assert_called_once_with(1)
-        query.assert_called_once()
-        assert VelbusFrame(
-                address=0x11,
+    mock_velbus.set_expected_conversation([
+        (
+            VelbusFrame(
+                address=module_address,
                 message=SetDimvalue(
-                    channel=subaddress,
+                    channel=channel,
                     dimvalue=100,
                     dimspeed=0,
+                )
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=DimmercontrollerStatus(
+                    channel=channel,
+                    dimvalue=100,
                 ),
-            ) == query.call_args[0][1]
-        # Sleep is done, next step
-        fake_sleep_returns.set_result(None)
-        setup_fake_sleep()
-        fsleep.reset_mock()
-        query.reset_mock()
+            ).to_bytes(),
+        ),
+    ])
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/e_dimvalue")
+    assert 202 == resp.status
+    # process_queue is now running async
+    # Wait until it calls asyncio.sleep()
 
-        await fake_sleep_is_called
-        # we are at the second sleep() call, inspect
-        fsleep.assert_called_once_with(0)
-        query.assert_called_once()
-        assert VelbusFrame(
-                address=0x11,
+    sleep_call = await fake_asyncio_sleep.new_sleep_call(from_function='process_queue')
+    # We are at the first sleep() call, inspect
+    assert 1 == sleep_call.delay
+    mock_velbus.assert_conversation_happened_exactly()
+
+    mock_velbus.set_expected_conversation([
+        (
+            VelbusFrame(
+                address=module_address,
                 message=SetDimvalue(
-                    channel=subaddress,
+                    channel=channel,
                     dimvalue=20,
                     dimspeed=0,
-                ),
-            ) == query.call_args[0][1]
-        # Sleep is done, next step
-        fake_sleep_returns.set_result(None)
+                )
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=DimmercontrollerStatus(
+                    channel=channel,
+                    dimvalue=20,
+                )
+            ).to_bytes()
+        ),
+    ])
+    sleep_call.return_asap()  # Consider sleep() to be done
+    # process_queue will now set the next dimvalue, and call asyncio.sleep(0)
 
-        # Last step done, queue should resolve now:
-        await HttpApi.modules[0x11].result().submodules[subaddress].queue_processing_task
+    sleep_call = await fake_asyncio_sleep.new_sleep_call(from_function='process_queue')
+    # we are at the second sleep() call, inspect
+    assert 0 == sleep_call.delay
+    mock_velbus.assert_conversation_happened_exactly()
+
+    sleep_call.return_asap()  # Consider sleep() to be done
+
+    # Last step done, queue should resolve now:
+    await HttpApi.modules[module_address].result().submodules[channel].queue_processing_task
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures('vmb4dc_11_http_api')
-async def test_put_dimvalue_list_cancel(sanic_req, subaddress, magic_str):
-    fake_sleep_is_called = None
-    fake_sleep_returns = None
+async def test_put_dimvalue_list_cancel(generate_sanic_request, mock_velbus, module_address, channel,
+                                        fake_asyncio_sleep):
+    mock_velbus.set_expected_conversation([
+        VMB4DC_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
+                message=SetDimvalue(
+                    channel=channel,
+                    dimvalue=100,
+                    dimspeed=0,
+                )
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=DimmercontrollerStatus(
+                    channel=channel,
+                    dimvalue=100,
+                )
+            ).to_bytes()
+        ),
+    ])
 
-    def setup_fake_sleep():
-        nonlocal fake_sleep_is_called, fake_sleep_returns
-        fake_sleep_is_called = asyncio.get_event_loop().create_future()
-        fake_sleep_returns = None
-
-    def fake_sleep(amount):
-        nonlocal fake_sleep_is_called, fake_sleep_returns
-        fake_sleep_is_called.set_result(True)
-        fake_sleep_returns = asyncio.get_event_loop().create_future()
-        return fake_sleep_returns
-
-    with \
-            patch('velbus.VelbusProtocol.VelbusProtocol.velbus_query',
-                  return_value=make_awaitable(None), autospec=True) as query, \
-            patch('asyncio.sleep', side_effect=fake_sleep) as fsleep:
-        sanic_req.method = 'PUT'
-        sanic_req.body = json.dumps([
-            {"dimvalue": 100, "timeout": 2},
+    sanic_req = generate_sanic_request(
+        method='PUT',
+        body=json.dumps([
+            {"dimvalue": 100, "timeout": 11},
             {"dimvalue": 20}
         ])
-        setup_fake_sleep()
-        resp = await HttpApi.module_req(sanic_req, '11', f"/{subaddress}/e_dimvalue")
-        assert 202 == resp.status
-        # process_queue is now running async
-        # It will block on the fake_sleep future to be resolved
+    )
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/e_dimvalue")
+    assert 202 == resp.status
+    # process_queue is now running async
+    # Wait until it calls asyncio.sleep()
 
-        await fake_sleep_is_called
-        # We are at the first sleep() call, send interrupting second call
-        fsleep.assert_called_once_with(2)
-        fsleep.reset_mock()
-        query.reset_mock()
-        sanic_req.body = '42'
-        sanic_req.parsed_json = None  # Reset JSON parser to re-parse '42'
-        resp = await HttpApi.module_req(sanic_req, '11', f"/{subaddress}/e_dimvalue")
-        assert 202 == resp.status
-        # Sleep is done, next step
-        assert fake_sleep_returns.cancelled()
-        setup_fake_sleep()
+    sleep_call = await fake_asyncio_sleep.new_sleep_call(from_function='process_queue')
+    # We are at the first sleep() call, inspect
+    assert 11 == sleep_call.delay
+    mock_velbus.assert_conversation_happened_exactly()
 
-        await fake_sleep_is_called
-        # we are at the first sleep() call after the interrupting call, inspect
-        fsleep.assert_called_once_with(0)
-        query.assert_called_once()
-        assert VelbusFrame(
-                address=0x11,
+    # Now interrupt this sleep with a new HTTP-call
+    mock_velbus.set_expected_conversation([
+        (
+            VelbusFrame(
+                address=module_address,
                 message=SetDimvalue(
-                    channel=subaddress,
+                    channel=channel,
                     dimvalue=42,
                     dimspeed=0,
                 ),
-            ) == query.call_args[0][1]
-        # Sleep is done, next step
-        fake_sleep_returns.set_result(None)
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=DimmercontrollerStatus(
+                    channel=channel,
+                    dimvalue=42,
+                )
+            ).to_bytes()
+        ),
+    ])
+    sanic_req = generate_sanic_request(
+        method='PUT',
+        body='42'
+    )
+    old_sleep_call = sleep_call
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/e_dimvalue")
+    assert 202 == resp.status
+    # process_queue is now running async
+    # Wait until it calls asyncio.sleep()
+    sleep_call = await fake_asyncio_sleep.new_sleep_call(from_function='process_queue')
 
-        # Last step done, queue should resolve now:
-        await HttpApi.modules[0x11].result().submodules[subaddress].queue_processing_task
+    # we are at the first sleep() call after the interrupting call, inspect
+    assert old_sleep_call.cancelled()
+    assert 0 == sleep_call.delay
+    mock_velbus.assert_conversation_happened_exactly()
+    sleep_call.return_asap()
+
+    # Last step done, queue should resolve now:
+    await HttpApi.modules[module_address].result().submodules[channel].queue_processing_task
