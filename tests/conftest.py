@@ -2,9 +2,12 @@
 Shared fixtures for use in tests
 """
 import asyncio
+import random
+import typing
+import inspect
 import weakref
-from typing import List, Union, Callable, Tuple
 
+import attr
 import pytest
 import sanic.request
 
@@ -48,6 +51,16 @@ def generate_sanic_request(request):
         return req
 
     return generator
+
+
+@pytest.fixture(params=[0x01, 0x11])
+def module_address(request):
+    """
+    Test different module addresses.
+    Especially test the case where decimal & hex representations differ,
+    and test leading 0's
+    """
+    return request.param
 
 
 @pytest.fixture
@@ -113,7 +126,11 @@ def mock_velbus(request):
 
         def set_expected_conversation(
                 self,
-                conversation: List[Tuple[Union[bytes, Callable], Union[bytes, None]]]
+                conversation: typing.List[
+                    typing.Tuple[
+                        typing.Union[bytes, typing.Callable],
+                        typing.Union[bytes, None]
+                    ]]
         ):
             """
             Specify the expected conversation.
@@ -123,6 +140,17 @@ def mock_velbus(request):
             or a callable that checks (probably in a more fuzzy way) the received bytes and returns the result.
             The response is either an exact byte sequence, or None, indicating no response needs to be generated.
             """
+            # Validate input
+            for index, exchange in enumerate(conversation):
+                if not len(exchange) == 2:
+                    raise ValueError("Invalid conversation, expected a list of tuples")
+                if not isinstance(exchange[0], bytes) and not isinstance(exchange[0], bytearray) \
+                        and not callable(exchange[0]):
+                    raise ValueError(f"Invalid conversation, expected bytes or callable in exchange {index}, rx")
+                if not isinstance(exchange[1], bytes) and not isinstance(exchange[1], bytearray) \
+                        and not exchange[1] is None:
+                    raise ValueError(f"Invalid conversation, expected bytes or None in exchange {index}, tx")
+
             self.conversation_to_happen = conversation
 
         def assert_conversation_happened(self) -> bool:
@@ -146,3 +174,99 @@ def mock_velbus(request):
     HttpApi.modules.clear()
     HttpApi.ws_clients.clear()
     VelbusProtocol.listeners.clear()
+
+
+@pytest.fixture(params=[0, 1])  # test with at least 2 values
+def magic_str(request):
+    start = 1E6 * request.param
+    return str(random.randint(start, start + 1E6))
+
+
+class FakeSleep:
+    sleeping_coros = set()
+
+    @attr.s(auto_attribs=True, hash=True)
+    class Waiter:
+        future: asyncio.Future
+        calling_function_name: str
+        timeout_handle: asyncio.Handle = None
+
+    waiters_for_new_calls: typing.Set["FakeSleep.Waiter"] = set()
+
+    def __init__(self, delay, result=None):
+        self.delay = delay
+        self.result = result
+        self.shortcut = asyncio.get_event_loop().create_future()
+        self._cancelled = False
+
+        self.caller = inspect.stack()[1].function
+        # print(f"New sleep({delay}) call from {self.caller} => {id(self)}")
+
+        self.sleeping_coros.add(self)
+
+        waiters_to_wake = set()
+        for waiter in self.waiters_for_new_calls:
+            if waiter.calling_function_name is None \
+                    or waiter.calling_function_name == self.caller:
+                waiters_to_wake.add(waiter)
+
+        for waiter in waiters_to_wake:
+            if not waiter.future.done():
+                waiter.future.set_result(self)
+
+    def return_asap(self) -> None:
+        if not self.shortcut.done():
+            self.shortcut.set_result(None)
+        # else: already returned
+
+    def cancelled(self) -> bool:
+        return self._cancelled
+
+    async def do_actual_sleep(self) -> typing.Any:
+        try:
+            await asyncio.wait_for(self.shortcut, self.delay)
+        except asyncio.TimeoutError:
+            pass
+        except asyncio.CancelledError:
+            self._cancelled = True
+        finally:
+            self.sleeping_coros.remove(self)
+        return self.result
+
+    def __await__(self) -> typing.Any:
+        return self.do_actual_sleep().__await__()
+
+    @classmethod
+    def new_sleep_call(
+            cls,
+            from_function: str = None,
+            timeout: typing.Union[float, None] = 1,
+    ) -> typing.Awaitable["FakeSleep"]:
+        waiter = FakeSleep.Waiter(
+            future=asyncio.get_event_loop().create_future(),
+            calling_function_name=from_function,
+        )
+
+        cls.waiters_for_new_calls.add(waiter)
+
+        def cleanup_waiter(fut):
+            cls.waiters_for_new_calls.remove(waiter)
+        waiter.future.add_done_callback(cleanup_waiter)
+
+        # print(f"Waiting for sleep() call to be called from {from_function}, waiter {id(waiter)}")
+
+        if timeout is not None:
+            def timeout_triggered():
+                if not waiter.future.done():
+                    waiter.future.set_exception(TimeoutError("No (matching) sleep() call seen"))
+            waiter.timeout_handle = asyncio.get_event_loop().call_later(
+                timeout, timeout_triggered)
+
+        return waiter.future
+
+
+@pytest.fixture()
+def fake_asyncio_sleep(mocker):
+    mocker.patch('asyncio.sleep', new=FakeSleep)
+    yield FakeSleep
+    mocker.stopall()
