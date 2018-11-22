@@ -87,14 +87,27 @@ def handle_sighup():
 loop.add_signal_handler(signal.SIGHUP, handle_sighup)
 
 # Connect to serial port
-serial_server = loop.run_until_complete(
+serial_transport, serial_protocol = loop.run_until_complete(
     serial_asyncio.create_serial_connection(
         loop, VelbusSerialProtocol, args.serial_port,
-        baudrate=9600,
+        baudrate=38400,
         bytesize=serial.EIGHTBITS,
         parity=serial.PARITY_NONE,
         stopbits=serial.STOPBITS_ONE,
     ))
+try:
+    logger.debug("Old DTR/RTS: {}/{}".format(
+        serial_transport._serial.dtr,
+        serial_transport._serial.rts
+    ))
+    serial_transport._serial.dtr = False  # low
+    serial_transport._serial.rts = True   # high
+    logger.debug("New DTR/RTS: {}/{}".format(
+        serial_transport._serial.dtr,
+        serial_transport._serial.rts
+    ))
+except OSError as e:
+    logger.warning("Could not set DTR/RTS status, trying anyway... ({})".format(str(e)))
 
 # send an interface status request, so we can quit right away if the bus is not active
 internal = VelbusProtocol()
