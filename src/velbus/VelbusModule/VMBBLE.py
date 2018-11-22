@@ -4,7 +4,7 @@ import sanic.request
 import sanic.response
 
 from ._registry import register
-from .NestedAddressVelbusModule import NestedAddressVelbusModule2, VelbusModuleChannel
+from .NestedAddressVelbusModule import NestedAddressVelbusModule, VelbusModuleChannel
 from ..VelbusMessage.VelbusFrame import VelbusFrame
 from ..VelbusMessage.ModuleInfo import ModuleInfo
 from ..VelbusMessage.ModuleInfo.VMB2BLE import VMB2BLE as VMB2BLE_MI
@@ -19,7 +19,7 @@ from ..VelbusProtocol import VelbusProtocol
 
 
 @register(VMB2BLE_MI, VMB1BLS_MI)
-class VMBBLE(NestedAddressVelbusModule2):
+class VMBBLE(NestedAddressVelbusModule):
     """
     VMB2BLE and VMB1BLS module management
 

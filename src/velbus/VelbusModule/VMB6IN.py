@@ -3,7 +3,7 @@ from typing import Callable
 import sanic.request
 import sanic.response
 
-from .NestedAddressVelbusModule import NestedAddressVelbusModule2, VelbusModuleChannel
+from .NestedAddressVelbusModule import NestedAddressVelbusModule, VelbusModuleChannel
 from ._registry import register
 
 from ..VelbusMessage.ModuleInfo import ModuleInfo
@@ -17,7 +17,7 @@ from ..VelbusProtocol import VelbusProtocol
 
 
 @register(VMB6IN_MI)
-class VMB6IN(NestedAddressVelbusModule2):
+class VMB6IN(NestedAddressVelbusModule):
     """
         VMB6IN module management
 

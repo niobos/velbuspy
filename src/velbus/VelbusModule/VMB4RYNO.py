@@ -5,7 +5,7 @@ import sanic.response
 import datetime
 
 
-from .NestedAddressVelbusModule import NestedAddressVelbusModule2, VelbusModuleChannel
+from .NestedAddressVelbusModule import NestedAddressVelbusModule, VelbusModuleChannel
 from ._registry import register
 
 from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
@@ -21,7 +21,7 @@ from ..VelbusProtocol import VelbusProtocol
 
 
 @register(VMB4RYNO_MI)
-class VMB4RYNO(NestedAddressVelbusModule2):
+class VMB4RYNO(NestedAddressVelbusModule):
     """
     VMB4RYNO module management
 

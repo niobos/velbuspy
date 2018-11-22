@@ -6,7 +6,7 @@ import sanic.response
 import attr
 
 from ._registry import register
-from .NestedAddressVelbusModule import NestedAddressVelbusModule2, VelbusModuleChannel
+from .NestedAddressVelbusModule import NestedAddressVelbusModule, VelbusModuleChannel
 from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
 from ..VelbusMessage.ModuleInfo.VMB4DC import VMB4DC as VMB4DC_MI
 from ..VelbusMessage.VelbusFrame import VelbusFrame
@@ -28,7 +28,7 @@ class DimStep:
 
 
 @register(VMB4DC_MI)
-class VMB4DC(NestedAddressVelbusModule2):
+class VMB4DC(NestedAddressVelbusModule):
     """
     VMB4DC module management
 

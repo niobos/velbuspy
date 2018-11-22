@@ -5,7 +5,7 @@ import sanic.request
 import sanic.response
 
 from ._registry import register
-from .NestedAddressVelbusModule import NestedAddressVelbusModule2, VelbusModuleChannel
+from .NestedAddressVelbusModule import NestedAddressVelbusModule, VelbusModuleChannel
 from ..VelbusMessage.VelbusFrame import VelbusFrame
 from ..VelbusMessage._types import BlindTimeout
 from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
@@ -29,7 +29,7 @@ def clamp(v, min_v, max_v):
 
 
 @register(VMB2BL_MI)
-class VMB2BL(NestedAddressVelbusModule2):
+class VMB2BL(NestedAddressVelbusModule):
     """
     VMB2BL module management
 
