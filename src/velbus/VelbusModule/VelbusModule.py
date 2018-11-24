@@ -1,4 +1,5 @@
 import re
+import typing
 from typing import Callable, Union, Awaitable
 
 import sanic.response
@@ -20,8 +21,8 @@ class VelbusModule():
         Initialize module handling for the given address
 
         SubClasses do not need to call this __init__ method if they don't need
-        its functionality. You will probably need to overload self.current_state()
-        in that case.
+        its functionality. You will probably need to overload the self.state
+        property in that case.
 
         :param bus: bus to communicate over to initialize the module further.
                     DO NOT STORE THIS VALUE, use the bus provided in dispatch()
@@ -35,21 +36,22 @@ class VelbusModule():
         """
         self.address = address
 
-        self.state = JsonPatchDict()
-        self.state.callback.add(update_state_cb)
+        self._state = JsonPatchDict()
+        self._state.callback.add(update_state_cb)
         # state is synced via WebSockets to JavaScript clients
         # You can use it as a nested dict. Be aware that Javascript requires strings as keys!
         #
         # It is advisable to keep the structure of `state` and the
         # URL-structure as similar as possible
 
-    def current_state(self) -> dict:
-        """
-        Return the current state for syncing to new clients
-        From that point on, clients will only receive updates via the update_state_cb() callback
-        :return: current state
-        """
-        return self.state
+    @property
+    def state(self) -> typing.Mapping:
+        return self._state
+
+    @state.setter
+    def state(self, value) -> None:
+        self._state.clear()
+        self._state.update(value)
 
     def message(self, vbm: VelbusFrame) -> None:
         """

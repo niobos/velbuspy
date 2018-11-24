@@ -192,7 +192,7 @@ async def ws_client_listen_module(bus: VelbusHttpProtocol,
 
         ws.subscribed_modules.add(address)
         # possible race condition here
-        mod_state = mod.current_state()
+        mod_state = mod.state
         await ws.send(json.dumps(
             JsonPatch([
                 JsonPatchOperation(

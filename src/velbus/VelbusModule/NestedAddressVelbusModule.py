@@ -36,7 +36,7 @@ class NestedAddressVelbusModule(VelbusModule):
                 parent_module=self,
                 update_state_cb=lambda ops: None,  # noop
             )
-            self.submodules[channel].state = self.state[channel]
+            self.submodules[channel]._state = self.state[channel]
 
     def parse_address(self, address: str) -> Any:
         """
