@@ -1,4 +1,6 @@
+import typing
 import weakref
+import enum
 
 import sanic.response
 import sanic.request
@@ -38,7 +40,7 @@ class NestedAddressVelbusModule(VelbusModule):
 
     def parse_address(self, address: str) -> Any:
         """
-        Parse and validate the address field.
+        Parse and validate the address field from a HTTP path.
         The default implementation converts the string to int and checks if
         it exists in self.addresses.
 
@@ -51,14 +53,28 @@ class NestedAddressVelbusModule(VelbusModule):
             raise ValueError("Unknown address")
         return address
 
+    def parse_channel(self, vbm: VelbusFrame) -> typing.Optional[int]:
+        """
+        Optionally overridable.
+        Parse a message and identify for which channel it is destined, or None to
+        broadcast to all channels.
+
+        The default implementation checks for a `channel` attribute in the message,
+        and routes based on its value.
+        """
+        if hasattr(vbm.message, 'channel'):
+            return vbm.message.channel
+        return None
+
     def message(self, vbm: VelbusFrame) -> None:
         """
         Optionally override to only pass messages to the correct submodule.
 
         This default implementation tries to do this naively
         """
-        if hasattr(vbm.message, 'channel'):
-            self.submodules[vbm.message.channel].message(vbm)
+        to_channel = self.parse_channel(vbm)
+        if to_channel is not None:
+            self.submodules[to_channel].message(vbm)
         else:
             for submodule in self.submodules.values():
                 submodule.message(vbm)

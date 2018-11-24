@@ -6,6 +6,7 @@ import sanic.response
 
 from velbus import HttpApi
 from velbus.VelbusProtocol import VelbusHttpProtocol
+from velbus.VelbusMessage._types import Index
 from velbus.VelbusMessage.VelbusFrame import VelbusFrame
 from velbus.VelbusMessage.ModuleTypeRequest import ModuleTypeRequest
 from velbus.VelbusMessage.ModuleType import ModuleType
@@ -22,6 +23,11 @@ from ..utils import make_awaitable
 
 @pytest.fixture(params=[1, 2, 3, 4, 5])
 def subaddress(request):
+    return request.param
+
+
+@pytest.fixture(params=[1, 2, 3, 4, 5])
+def channel(request):
     return request.param
 
 
@@ -87,48 +93,83 @@ async def test_get_type(sanic_req):
     assert 'VMB4RYNOChannel at 0x11/2\r\n' in resp.body.decode('utf-8')
 
 
-@pytest.mark.asyncio
-@pytest.mark.usefixtures('vmb4ryno_11_http_api')
-async def test_get_relay(sanic_req):
-    def velbus_query(self,
-                     question: VelbusFrame,
-                     response_type: type,
-                     response_address: int = None,
-                     timeout: int = 2,
-                     additional_check=(lambda vbm: True)):
-        del self, response_type, response_address, timeout, additional_check  # unused
-        velbus_query.called += 1
-        assert question == VelbusFrame(address=0x11, message=ModuleStatusRequest(
-            channel=1 << (4 - 1),
-        ))
-        ret = VelbusFrame(address=0x11, message=RelayStatus(
-                channel=4,
-                relay_status=RelayStatus.RelayStatus.On,
-            ))
-        HttpApi.modules[0x11].result().message(ret)
-        return make_awaitable(ret)
-    velbus_query.called = 0
-
-    with patch('velbus.VelbusProtocol.VelbusHttpProtocol.velbus_query', new=velbus_query):
-        resp = await HttpApi.module_req(sanic_req, '11', '/4/relay')
-        assert 'true' == resp.body.decode('utf-8')
-        assert velbus_query.called == 1
+def VMB4RYNO_module_info_exchange(module_address):
+    return (
+        VelbusFrame(
+            address=module_address,
+            message=ModuleTypeRequest(),
+        ).to_bytes(),
+        VelbusFrame(
+            address=module_address,
+            message=ModuleType(
+                module_info=VMB4RYNO_mi(),
+            ),
+        ).to_bytes()
+    )
 
 
 @pytest.mark.asyncio
-@pytest.mark.usesfixtures('vmb4ryno_11_http_api')
-async def test_ws(sanic_req):
-    HttpApi.message(VelbusFrame(address=0x11, message=RelayStatus(
-        channel=4,
-        relay_status=RelayStatus.RelayStatus.Off,
-    )))
+async def test_get_relay(generate_sanic_request, mock_velbus, module_address, channel):
+    mock_velbus.set_expected_conversation([
+        VMB4RYNO_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
+                message=ModuleStatusRequest(
+                    channel=Index(8)(channel).to_int(),
+                ),
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=RelayStatus(
+                    channel=channel,
+                    relay_status=RelayStatus.RelayStatus.On,
+                ),
+            ).to_bytes()
+        )
+    ])
+
+    sanic_req = generate_sanic_request()
+    resp = await HttpApi.module_req(sanic_req, f"{module_address:02x}", f"/{channel}/relay")
+    assert 200 == resp.status
+    assert 'true' == resp.body.decode('utf-8')
+    assert mock_velbus.assert_conversation_happened_exactly()
+
+
+@pytest.mark.asyncio
+async def test_ws(generate_sanic_request, mock_velbus):
+    module_address = 0x11  # TODO: check for "all" addresses
+    channel = 4  # TODO: check all channels
+
+    mock_velbus.set_expected_conversation([
+        VMB4RYNO_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
+                message=ModuleStatusRequest(
+                    channel=Index(8)(channel).to_int(),
+                ),
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=RelayStatus(
+                    channel=channel,
+                    relay_status=RelayStatus.RelayStatus.Off,
+                ),
+            ).to_bytes()
+        )
+    ])
+    # Initialize the module
+    sanic_req = generate_sanic_request()
+    resp = await HttpApi.module_req(sanic_req, f"{module_address:02x}", f"/{channel}/relay")
 
     ws = Mock()
-    ws.subscribed_modules = {0x11}
+    ws.subscribed_modules = {module_address}
     ws.send = Mock(return_value=make_awaitable(None))
 
     HttpApi.ws_clients.add(ws)
-    await HttpApi.ws_client_listen_module(VelbusHttpProtocol(sanic_req), 0x11, ws)
+    sanic_req = generate_sanic_request()
+    await HttpApi.ws_client_listen_module(VelbusHttpProtocol(sanic_req), module_address, ws)
     ws.send.assert_called_once_with('[{"op": "add", "path": "/11", "value": {'
                                     '"1": {}, '
                                     '"2": {}, '
@@ -138,15 +179,15 @@ async def test_ws(sanic_req):
                                     '}}]')
     ws.send.reset_mock()
 
-    HttpApi.message(VelbusFrame(address=0x11, message=RelayStatus(
-        channel=4,
+    HttpApi.message(VelbusFrame(address=module_address, message=RelayStatus(
+        channel=channel,
         relay_status=RelayStatus.RelayStatus.On,
     )))
     ws.send.assert_called_once_with('[{"op": "add", "path": "/11/4/relay", "value": true}]')
     ws.send.reset_mock()
 
-    HttpApi.message(VelbusFrame(address=0x11, message=RelayStatus(
-        channel=4,
+    HttpApi.message(VelbusFrame(address=module_address, message=RelayStatus(
+        channel=channel,
         relay_status=RelayStatus.RelayStatus.Off,
     )))
     ws.send.assert_called_once_with('[{"op": "add", "path": "/11/4/relay", "value": false}]')

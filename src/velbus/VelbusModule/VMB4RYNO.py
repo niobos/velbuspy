@@ -1,9 +1,8 @@
-from typing import Callable
+import typing
+import datetime
 
 import sanic.request
 import sanic.response
-import datetime
-
 
 from .NestedAddressVelbusModule import NestedAddressVelbusModule, VelbusModuleChannel
 from ._registry import register
@@ -34,7 +33,7 @@ class VMB4RYNO(NestedAddressVelbusModule):
                  bus: VelbusProtocol,
                  address: int,
                  module_info: ModuleInfo = None,
-                 update_state_cb: Callable = lambda ops: None
+                 update_state_cb: typing.Callable = lambda ops: None
                  ):
         super().__init__(
             bus=bus,
@@ -84,15 +83,18 @@ class VMB4RYNOChannel(VelbusModuleChannel):
 
     async def _get_relay_state(self, bus: VelbusProtocol):
         if 'relay' not in self.state:
+            channel_index = 1 << (self.channel - 1)
             _ = await bus.velbus_query(
                 VelbusFrame(
                     address=self.address,
                     message=ModuleStatusRequest(
-                        channel=1 << (self.channel - 1),
+                        channel=channel_index,
+                        # ModuleStatusRequest is generic UInt(8), Index-encoding needs to be done here
                     ),
                 ),
                 RelayStatus,
-                additional_check=(lambda vbm: vbm.message.relay == self.channel),
+                additional_check=(lambda vbm: vbm.message.channel == self.channel),
+                # ^^^ Index decoding is done in RelayStatus
             )
             # Do await the reply, but don't actually use it.
             # The reply will (also) be given to self.message(),
@@ -153,7 +155,7 @@ class VMB4RYNOChannel(VelbusModuleChannel):
                 message=message,
             ),
             RelayStatus,
-            additional_check=(lambda vbm: vbm.message.relay == self.channel),
+            additional_check=(lambda vbm: vbm.message.channel == self.channel),
         )
         # Wait for reply, but don't actually use it
         # self.message() will be called with the same reply. Processing happens there
