@@ -167,3 +167,17 @@ class JsonPatchDict(dict):
             # add is UPSERT, so works for replace as well
 
         return super().update(other_str)
+
+    def replace(self, *args, **kwargs) -> None:
+        """
+        Equivalent to self.clear(); self.update(*args, **kwargs)
+        But implemented more efficiently in the emitted operations
+        """
+        super().clear()
+        other = dict(*args, **kwargs)
+        other_str = {
+            str(k): v
+            for k, v in other.items()
+        }
+        super().update(other_str)
+        self._operation(JsonPatchOperation(JsonPatchOperation.Operation.replace, [], other_str))

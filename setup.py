@@ -22,5 +22,6 @@ setup(
         'pytest',
         'pytest-asyncio',
         'pytest-mock',
+        'jsonpatch',
     ],
 )

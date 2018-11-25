@@ -2,6 +2,8 @@ import gc
 
 import datetime
 import pytest
+import jsonpatch
+
 from JsonPatchDict import JsonPatchDict, JsonPatchOperation, JsonPatch
 
 
@@ -71,6 +73,15 @@ def test_tracking():
     ])
     assert(operations[0][0].to_json_able() == {'op': 'add', 'path': '/test~0123~1456', 'value': 42})
 
+    operations = []
+    new_value = {'foo': 'bar', 'baz': 42}
+    a.replace(new_value)
+    assert operations == [
+        JsonPatch([
+            JsonPatchOperation(op=JsonPatchOperation.Operation.replace, path=[], value=new_value)
+        ])
+    ]
+
 
 def test_non_jsonable():
     a = JsonPatchDict()
@@ -80,5 +91,35 @@ def test_non_jsonable():
 
 def test_bool():
     a = JsonPatchDict()
-    a[0] = True
+    a['0'] = True
     assert a['0'] == True
+
+
+def test_string_keys():
+    a = JsonPatchDict()
+    a[1] = True
+    assert a['1'] == True
+
+
+def test_reconstruct():
+    """Test compatibility by applying the patches with a different library"""
+    a = JsonPatchDict()
+
+    b = dict()
+
+    def cb(ops: JsonPatch):
+        for op in ops:
+            patch = jsonpatch.JsonPatch([op.to_json_able()])
+            nonlocal b
+            b = patch.apply(b)
+
+    a.callback.add(cb)
+
+    a['foo'] = 'bar'
+    assert a == b
+
+    a.setdefault('bar', 'baz')
+    assert a == b
+
+    a.replace({"hello": "world"})
+    assert a == b

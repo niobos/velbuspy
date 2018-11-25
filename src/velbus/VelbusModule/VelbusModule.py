@@ -50,8 +50,7 @@ class VelbusModule():
 
     @state.setter
     def state(self, value) -> None:
-        self._state.clear()
-        self._state.update(value)
+        self._state.replace(value)
 
     def message(self, vbm: VelbusFrame) -> None:
         """
