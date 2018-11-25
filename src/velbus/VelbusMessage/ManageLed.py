@@ -18,4 +18,4 @@ class ManageLed(VelbusMessage):
         VeryFastBlinkLed = 0xf9
     command: Command = Command.ClearLed
 
-    led: Index(8) = 1
+    channel: Index(8) = 1

@@ -192,7 +192,7 @@ async def ws_client_listen_module(bus: VelbusHttpProtocol,
 
         ws.subscribed_modules.add(address)
         # possible race condition here
-        mod_state = mod.current_state()
+        mod_state = mod.state
         await ws.send(json.dumps(
             JsonPatch([
                 JsonPatchOperation(
@@ -269,13 +269,7 @@ def get_module(bus: VelbusProtocol, address: int) -> Awaitable[VelbusModule]:
 
 def gen_update_state_cb(address) -> Callable:
     def update_state_cb(ops: JsonPatch):
-        prefixed_ops = JsonPatch([
-            JsonPatchOperation(
-                op=op.op,
-                path=['{:02x}'.format(address), *op.path],
-                value=op.value)
-            for op in ops
-        ])
+        prefixed_ops = ops.prefixed(['{:02x}'.format(address)])
         json_patch = json.dumps(prefixed_ops.to_json_able())
 
         for ws in ws_clients:

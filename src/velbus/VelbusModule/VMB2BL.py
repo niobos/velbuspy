@@ -1,19 +1,20 @@
 from datetime import datetime
+import typing
 
 import sanic.request
 import sanic.response
 
 from ._registry import register
-from ._utils import validate_channel_from_pathinfo
-from .NestedAddressVelbusModule import NestedAddressVelbusModule
+from .NestedAddressVelbusModule import NestedAddressVelbusModule, VelbusModuleChannel
 from ..VelbusMessage.VelbusFrame import VelbusFrame
 from ..VelbusMessage._types import BlindTimeout
+from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
 from ..VelbusMessage.ModuleInfo.VMB2BL import VMB2BL as VMB2BL_MI
 from ..VelbusMessage.ModuleStatusRequest import ModuleStatusRequest
 from ..VelbusMessage.BlindStatus import BlindStatusV1
-from ..VelbusMessage.SetBlindPosition import SetBlindPosition
 from ..VelbusMessage.SwitchBlind import SwitchBlindV1
 from ..VelbusMessage.SwitchBlindOff import SwitchBlindOffV1
+from ..VelbusModule.VelbusModule import VelbusModule
 
 from ..VelbusProtocol import VelbusProtocol
 
@@ -33,7 +34,29 @@ class VMB2BL(NestedAddressVelbusModule):
     VMB2BL module management
 
     state = {
-        1: {
+        "1": {...},   # channel state
+        ...
+    }
+    """
+    def __init__(self,
+                 bus: VelbusProtocol,
+                 address: int,
+                 module_info: ModuleInfo = None,
+                 update_state_cb: typing.Callable = lambda ops: None
+                 ):
+        self.module_info = module_info  # Save module_info to extract timeout settings
+        # NOTE: save module_info before calling super()
+        super().__init__(
+            bus=bus,
+            address=address,
+            module_info=module_info,
+            update_state_cb=update_state_cb,
+            channels=[1, 2], channel_type=VMBBLChannel,
+        )
+
+
+class VMBBLChannel(VelbusModuleChannel):
+    """
             'status': 'down',
                       # 'up', 'off', 'down'
             'position': 100,
@@ -42,90 +65,88 @@ class VMB2BL(NestedAddressVelbusModule):
         ...
     }
     """
+    def __init__(self,
+                 bus: VelbusProtocol,
+                 channel: int,
+                 parent_module: VMB2BL,
+                 update_state_cb: typing.Callable = lambda ops: None,
+                 ):
 
-    def __init__(self, module_info, *args, **kwargs):
-        super().__init__(*args, module_info=module_info, **kwargs)
+        super().__init__(
+            bus=bus,
+            channel=channel,
+            parent_module=parent_module,
+            update_state_cb=update_state_cb,
+        )
+        if channel == 1:
+            self.timeout = BlindTimeout.to_secs(parent_module.module_info.timeout_blind1)
+        elif channel == 2:
+            self.timeout = BlindTimeout.to_secs(parent_module.module_info.timeout_blind2)
+        else:
+            raise ValueError(f"Invalid channel for VMB2BL: {channel}")
 
-        self.addresses = [1, 2]
-
-        self.timeout = {
-            1: BlindTimeout.to_secs(module_info.timeout_blind1),
-            2: BlindTimeout.to_secs(module_info.timeout_blind2),
+        self.estimate_info = {
+            'timestamp': datetime.utcnow(),
         }
-
-        for blind in (1,2):
-            self.state[str(blind)] = {
-                'status': 'off',
-                'position': 50,
-            }
-
-        self.estimate_info = {}
-        for i in (1, 2):
-            self.estimate_info[i] = {
-                'timestamp': datetime.utcnow(),
-            }
 
     def message(self, vbm: VelbusFrame):
         if isinstance(vbm.message, BlindStatusV1):
             blind_status = vbm.message
 
-            current_position = self.estimate_position(blind_status.channel)
-            self.estimate_info[blind_status.channel]['timestamp'] = datetime.utcnow()
+            self.state['position'] = self.estimate_position()
+            self.estimate_info['timestamp'] = datetime.utcnow()
 
             if blind_status.blind_status == BlindStatusV1.BlindStatus.Off:
-                status = 'off'
+                self.state['status'] = 'off'
             elif blind_status.blind_status in (BlindStatusV1.BlindStatus.Blind1Down,
                                                BlindStatusV1.BlindStatus.Blind2Down):
-                status = 'down'
+                self.state['status'] = 'down'
             elif blind_status.blind_status in (BlindStatusV1.BlindStatus.Blind1Up,
                                                BlindStatusV1.BlindStatus.Blind2Up):
-                status = 'up'
+                self.state['status'] = 'up'
             else:
-                raise NotImplementedError("Unreachable code")
+                raise ValueError("Unknown blindstatus")
 
-            self.state[str(blind_status.channel)] = {
-                'status': status,
-                'position': current_position,
-            }
+    def estimate_position(self) -> int:
+        self.state.setdefault('status', 'off')
+        self.state.setdefault('position', 50)
 
-    def estimate_position(self, channel: int) -> int:
-        if self.state[str(channel)]['status'] == 'off':
+        if self.state['status'] == 'off':
             # Blind was stopped, no movement to calculate
-            return self.state[str(channel)]['position']
+            return self.state['position']
         # else: Blind was moving
 
-        delta_t = datetime.utcnow() - self.estimate_info[channel]['timestamp']
+        delta_t = datetime.utcnow() - self.estimate_info['timestamp']
         delta_t = delta_t.total_seconds()
-        if self.state[str(channel)]['status'] == 'up':
+        if self.state['status'] == 'up':
             direction = -1  # up
         else:
             direction = 1  # down
-        travel = direction * 100 * delta_t / self.timeout[channel]
+        travel = direction * 100 * delta_t / self.timeout
 
         return clamp(
-            self.state[str(channel)]['position'] + travel,
+            self.state['position'] + travel,
             0, 100)
 
-    async def _get_status(self, bus: VelbusProtocol, channel):
-        if str(channel) not in self.state:
+    async def _get_status(self, bus: VelbusProtocol):
+        if 'status' not in self.state:
             _ = await bus.velbus_query(
                 VelbusFrame(
                     address=self.address,
                     message=ModuleStatusRequest(
-                        channel=0b11 << 2*(channel - 1),
+                        channel=0b11 << 2*(self.channel - 1),
                     ),
                 ),
                 BlindStatusV1,
-                additional_check=(lambda vbm: vbm.message.channel == channel),
+                additional_check=(lambda vbm: vbm.message.channel == self.channel),
             )
             # Do await the reply, but don't actually use it.
             # The reply will (also) be given to self.message(),
             # so by the time we get here, the cache will be up-to-date
 
-        return self.state[str(channel)]
+        return self.state
 
     async def position_GET(self,
-                           subaddress: int,
                            path_info: str,
                            request: sanic.request,
                            bus: VelbusProtocol
@@ -139,12 +160,11 @@ class VMB2BL(NestedAddressVelbusModule):
         if path_info != '':
             return sanic.response.text('Not found', status=404)
 
-        _ = await self._get_status(bus, subaddress)
+        # Assume we have up-to-date state. (We initialize to 50%, but can't check anyway)
 
-        return sanic.response.json(self.estimate_position(subaddress))
+        return sanic.response.json(self.estimate_position())
 
     async def position_PUT(self,
-                           subaddress: int,
                            path_info: str,
                            request: sanic.request,
                            bus: VelbusProtocol
@@ -166,14 +186,14 @@ class VMB2BL(NestedAddressVelbusModule):
             requested_status = request.json
 
         if isinstance(requested_status, int):
-            current_position = self.estimate_position(subaddress)
+            current_position = self.estimate_position()
 
             if requested_status == current_position:
                 message = SwitchBlindOffV1(
-                    channel=subaddress,
+                    channel=self.channel,
                 )
             else:
-                travel = int((requested_status - current_position) / 100 * self.timeout[subaddress])
+                travel = int((requested_status - current_position) / 100 * self.timeout)
                 direction = SwitchBlindV1.Command.SwitchBlindDown if travel > 0 else SwitchBlindV1.Command.SwitchBlindUp
                 travel = abs(travel)
                 if travel == 0:
@@ -181,7 +201,7 @@ class VMB2BL(NestedAddressVelbusModule):
                     travel = 1
                 message = SwitchBlindV1(
                     command=direction,
-                    channel=subaddress,
+                    channel=self.channel,
                     timeout=int(travel),
                 )
 
@@ -189,16 +209,16 @@ class VMB2BL(NestedAddressVelbusModule):
             if requested_status == 'up':
                 message = SwitchBlindV1(
                     command=SwitchBlindV1.Command.SwitchBlindUp,
-                    channel=subaddress,
+                    channel=self.channel,
                 )
             elif requested_status == 'down':
                 message = SwitchBlindV1(
                     command=SwitchBlindV1.Command.SwitchBlindDown,
-                    channel=subaddress,
+                    channel=self.channel,
                 )
             elif requested_status == 'stop':
                 message = SwitchBlindOffV1(
-                    channel=subaddress,
+                    channel=self.channel,
                 )
             else:
                 raise AssertionError("Unreachable code reached")
@@ -212,7 +232,7 @@ class VMB2BL(NestedAddressVelbusModule):
                 message=message,
             ),
             BlindStatusV1,
-            additional_check=(lambda vbm: vbm.message.channel == subaddress),
+            additional_check=(lambda vbm: vbm.message.channel == self.channel),
         )
 
-        return await self.position_GET(subaddress, path_info, request, bus)
+        return await self.position_GET(path_info, request, bus)

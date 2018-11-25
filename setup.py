@@ -21,5 +21,7 @@ setup(
     tests_require=[
         'pytest',
         'pytest-asyncio',
+        'pytest-mock',
+        'jsonpatch',
     ],
 )

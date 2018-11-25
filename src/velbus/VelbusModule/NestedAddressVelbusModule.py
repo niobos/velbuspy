@@ -1,32 +1,46 @@
+import typing
+import weakref
+import enum
+
 import sanic.response
 import sanic.request
 
-from typing import Any, Callable
+from typing import Any, Callable, Dict, Union, Awaitable, Iterable
 
 from .VelbusModule import VelbusModule
 from ..VelbusProtocol import VelbusProtocol
+from ..VelbusMessage.VelbusFrame import VelbusFrame
 from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
 
 
 class NestedAddressVelbusModule(VelbusModule):
-    def __init__(self,
-                 bus: VelbusProtocol,
-                 address: int,
-                 module_info: ModuleInfo,
-                 update_state_cb: Callable = lambda op, path, value: None):
+    def __init__(
+            self,
+            bus: VelbusProtocol,
+            address: int,
+            module_info: ModuleInfo,
+            channels: Iterable[Any],
+            channel_type: type,
+            update_state_cb: Callable = lambda op, path, value: None,
+            ):
         super().__init__(bus=bus,
                          address=address,
                          module_info=module_info,
                          update_state_cb=update_state_cb)
 
-        if not hasattr(self, 'addresses'):
-            # List of allowed (sub)addresses
-            # Wrapped in hasattr to catch the mistake of calling super() after setting self.addresses
-            self.addresses = []
+        self.submodules = {}
+        for channel in channels:
+            self.submodules[channel] = channel_type(
+                bus=bus,
+                channel=channel,
+                parent_module=self,
+                update_state_cb=lambda ops: None,  # noop
+            )
+            self.submodules[channel]._state = self.state[channel]
 
     def parse_address(self, address: str) -> Any:
         """
-        Parse and validate the address field.
+        Parse and validate the address field from a HTTP path.
         The default implementation converts the string to int and checks if
         it exists in self.addresses.
 
@@ -35,9 +49,35 @@ class NestedAddressVelbusModule(VelbusModule):
         :raises: ValueError when the address is invalid
         """
         address = int(address)
-        if address not in self.addresses:
+        if address not in self.submodules:
             raise ValueError("Unknown address")
         return address
+
+    def parse_channel(self, vbm: VelbusFrame) -> typing.Optional[int]:
+        """
+        Optionally overridable.
+        Parse a message and identify for which channel it is destined, or None to
+        broadcast to all channels.
+
+        The default implementation checks for a `channel` attribute in the message,
+        and routes based on its value.
+        """
+        if hasattr(vbm.message, 'channel'):
+            return vbm.message.channel
+        return None
+
+    def message(self, vbm: VelbusFrame) -> None:
+        """
+        Optionally override to only pass messages to the correct submodule.
+
+        This default implementation tries to do this naively
+        """
+        to_channel = self.parse_channel(vbm)
+        if to_channel is not None:
+            self.submodules[to_channel].message(vbm)
+        else:
+            for submodule in self.submodules.values():
+                submodule.message(vbm)
 
     def dispatch(self, path_info: str, request: sanic.request, bus: VelbusProtocol):
         """
@@ -61,7 +101,7 @@ class NestedAddressVelbusModule(VelbusModule):
 
         if path_info == '/':
             # generate index
-            addr_list = [str(_) for _ in self.addresses]
+            addr_list = [str(_) for _ in self.submodules.keys()]
             addr_list.append('type')
             return sanic.response.text('\r\n'.join(addr_list) + '\r\n')
 
@@ -86,16 +126,47 @@ class NestedAddressVelbusModule(VelbusModule):
             module_path[1] = '/' + module_path[1]
 
         try:
-            return self.lookup_method(module_path[0], request.method)(
-                subaddress=subaddress,
-                path_info=module_path[1],
-                request=request,
-                bus=bus,
-            )
+            return self.submodules[subaddress].lookup_method(
+                module_path[0], request.method)(
+                    path_info=module_path[1],
+                    request=request,
+                    bus=bus,
+                )
         except AttributeError:
             return sanic.response.text('{m} for {t} not found\r\n'.format(
-                    m=module_path[0],
-                    t=self.__class__.__name__,
-                ),
+                m=module_path[0],
+                t=self.__class__.__name__,
+            ),
                 status=404
             )
+
+
+class VelbusModuleChannel(VelbusModule):
+    def __init__(self,
+                 bus: VelbusProtocol,
+                 channel: int,
+                 parent_module: VelbusModule,
+                 update_state_cb: Callable = lambda ops: None,
+                 ):
+        super().__init__(
+            bus=bus,
+            address=parent_module.address,
+            update_state_cb=update_state_cb,
+        )
+        self.channel = channel
+        self.parent = weakref.proxy(parent_module)  # avoid circular dependencies
+
+    def type_GET(self,
+                 path_info: str,
+                 request: sanic.request,
+                 bus: VelbusProtocol,
+                 *args, **kwargs
+                 ) -> Union[sanic.response.HTTPResponse, Awaitable[sanic.response.HTTPResponse]]:
+        del request, bus, args, kwargs  # unused
+
+        if path_info != '':
+            return sanic.response.text('Not found\r\n', status=404)
+
+        return sanic.response.text(
+            f"{self.__class__.__name__} at 0x{self.address:02x}/{self.channel}\r\n"
+        )

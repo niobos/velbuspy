@@ -14,7 +14,7 @@ class StartRelayTimer(VelbusMessage):
         StartRelayTimer = 0x03
     command: Command = Command.StartRelayTimer
 
-    relay: Index(8) = 1
+    channel: Index(8) = 1
 
     delay_time: UInt(24) = 0
     """

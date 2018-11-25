@@ -17,5 +17,7 @@ class SetDimvalue(VelbusMessage):
     channel: Index(8, 4) = 1
 
     dimvalue: UInt(8) = 0
+    """0-100%"""
 
     dimspeed: UInt(16) = 0
+    """contains a 16-bit time in seconds needed for dimming to the desired value"""

@@ -1,11 +1,12 @@
+from typing import Callable
+
 import sanic.request
 import sanic.response
 
 from ._registry import register
-from ._utils import validate_channel_from_pathinfo
-from .VelbusModule import VelbusModule
-from .NestedAddressVelbusModule import NestedAddressVelbusModule
+from .NestedAddressVelbusModule import NestedAddressVelbusModule, VelbusModuleChannel
 from ..VelbusMessage.VelbusFrame import VelbusFrame
+from ..VelbusMessage.ModuleInfo import ModuleInfo
 from ..VelbusMessage.ModuleInfo.VMB2BLE import VMB2BLE as VMB2BLE_MI
 from ..VelbusMessage.ModuleInfo.VMB1BLS import VMB1BLS as VMB1BLS_MI
 from ..VelbusMessage.ModuleStatusRequest import ModuleStatusRequest
@@ -23,7 +24,34 @@ class VMBBLE(NestedAddressVelbusModule):
     VMB2BLE and VMB1BLS module management
 
     state = {
-        1: {
+        "1": {...}  # channel state
+        ...
+    }
+    """
+    def __init__(self,
+                 bus: VelbusProtocol,
+                 address: int,
+                 module_info: ModuleInfo = None,
+                 update_state_cb: Callable = lambda ops: None
+                 ):
+        if isinstance(module_info, VMB2BLE_MI):
+            channels = [1, 2]
+        elif isinstance(module_info, VMB1BLS_MI):
+            channels = [1]
+        else:
+            raise NotImplementedError("Unreachable code")
+
+        super().__init__(
+            bus=bus,
+            address=address,
+            module_info=module_info,
+            update_state_cb=update_state_cb,
+            channels=channels, channel_type=VMBBLEChannel,
+        )
+
+
+class VMBBLEChannel(VelbusModuleChannel):
+    """
             'status': 'down',
                       # 'up', 'off', 'down'
             'position': 100,
@@ -32,16 +60,6 @@ class VMBBLE(NestedAddressVelbusModule):
         ...
     }
     """
-
-    def __init__(self, module_info, *args, **kwargs):
-        super().__init__(*args, module_info=module_info, **kwargs)
-        if isinstance(module_info, VMB2BLE_MI):
-            self.addresses = [1, 2]
-        elif isinstance(module_info, VMB1BLS_MI):
-            self.addresses = [1]
-        else:
-            raise NotImplementedError("Unreachable code")
-
     def message(self, vbm: VelbusFrame):
         if isinstance(vbm.message, BlindStatusV2):
             blind_status = vbm.message
@@ -55,33 +73,32 @@ class VMBBLE(NestedAddressVelbusModule):
             else:
                 raise NotImplementedError("Unreachable code")
 
-            self.state[str(blind_status.channel)] = {
+            self.state = {
                 'status': status,
                 'position': blind_status.blind_position,
             }
 
         # TODO: add moving indicator
 
-    async def _get_status(self, bus: VelbusProtocol, channel):
-        if channel not in self.state:
+    async def _get_status(self, bus: VelbusProtocol):
+        if 'status' not in self.state:
             _ = await bus.velbus_query(
                 VelbusFrame(
                     address=self.address,
                     message=ModuleStatusRequest(
-                        channel=1 << (channel - 1),
+                        channel=1 << (self.channel - 1),
                     ),
                 ),
                 BlindStatusV2,
-                additional_check=(lambda vbm: vbm.message.channel == channel),
+                additional_check=(lambda vbm: vbm.message.channel == self.channel),
             )
             # Do await the reply, but don't actually use it.
             # The reply will (also) be given to self.message(),
             # so by the time we get here, the cache will be up-to-date
 
-        return self.state[str(channel)]
+        return self.state
 
     async def position_GET(self,
-                           subaddress: int,
                            path_info: str,
                            request: sanic.request,
                            bus: VelbusProtocol
@@ -95,12 +112,11 @@ class VMBBLE(NestedAddressVelbusModule):
         if path_info != '':
             return sanic.response.text('Not found', status=404)
 
-        status = await self._get_status(bus, subaddress)
+        status = await self._get_status(bus)
 
         return sanic.response.json(status['position'])
 
     async def position_PUT(self,
-                           subaddress: int,
                            path_info: str,
                            request: sanic.request,
                            bus: VelbusProtocol
@@ -123,23 +139,23 @@ class VMBBLE(NestedAddressVelbusModule):
 
         if isinstance(requested_status, int):
             message = SetBlindPosition(
-                channel=subaddress,
+                channel=self.channel,
                 position=requested_status,
             )
         elif isinstance(requested_status, str):
             if requested_status == 'up':
                 message = SwitchBlindV2(
                     command=SwitchBlindV2.Command.SwitchBlindUp,
-                    channel=subaddress,
+                    channel=self.channel,
                 )
             elif requested_status == 'down':
                 message = SwitchBlindV2(
                     command=SwitchBlindV2.Command.SwitchBlindDown,
-                    channel=subaddress,
+                    channel=self.channel,
                 )
             elif requested_status == 'stop':
                 message = SwitchBlindOffV2(
-                    channel=subaddress,
+                    channel=self.channel,
                 )
             else:
                 raise AssertionError("Unreachable code reached")
@@ -153,7 +169,7 @@ class VMBBLE(NestedAddressVelbusModule):
                 message=message,
             ),
             BlindStatusV2,
-            additional_check=(lambda vbm: vbm.message.channel == subaddress),
+            additional_check=(lambda vbm: vbm.message.channel == self.channel),
         )
 
-        return await self.position_GET(subaddress, path_info, request, bus)
+        return await self.position_GET(path_info, request, bus)
