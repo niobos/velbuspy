@@ -1,18 +1,22 @@
 import json
-
 import pytest
-import asyncio
+
 import sanic.response
 import sanic.exceptions
 
 from velbus import HttpApi
+from velbus.VelbusMessage._types import Index
 from velbus.VelbusMessage.VelbusFrame import VelbusFrame
 from velbus.VelbusMessage.ModuleTypeRequest import ModuleTypeRequest
 from velbus.VelbusMessage.ModuleType import ModuleType
 from velbus.VelbusMessage.ModuleInfo.VMB4DC import VMB4DC as VMB4DC_mi
+from velbus.VelbusMessage.ModuleStatusRequest import ModuleStatusRequest
 from velbus.VelbusMessage.SetDimvalue import SetDimvalue
 from velbus.VelbusMessage.DimmercontrollerStatus import DimmercontrollerStatus
 from velbus.VelbusModule.VMB4DC import VMB4DC as VMB4DC_mod
+
+
+_ = VMB4DC_mod  # load module to enable processing
 
 
 def VMB4DC_module_info_exchange(module_address):
@@ -35,20 +39,32 @@ def channel(request):
     return request.param
 
 
-@pytest.fixture
-def vmb4dc_11_http_api(request):
-    del request  # unused
-    HttpApi.modules.clear()
-    HttpApi.ws_clients.clear()
+@pytest.mark.asyncio
+async def test_get_dimvalue(generate_sanic_request, mock_velbus, module_address, channel):
+    mock_velbus.set_expected_conversation([
+        VMB4DC_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
+                message=ModuleStatusRequest(
+                    channel=Index(8)(channel).to_int(),
+                ),
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=DimmercontrollerStatus(
+                    channel=channel,
+                    dimvalue=channel * 10,
+                ),
+            ).to_bytes()
+        ),
+    ])
 
-    HttpApi.modules[0x11] = asyncio.get_event_loop().create_future()
-    HttpApi.modules[0x11].set_result(
-        VMB4DC_mod(bus=None, address=0x11, module_info=VMB4DC_mi(),
-                   update_state_cb=HttpApi.gen_update_state_cb(0x11))
-    )
-
-    yield
-    # leave dirty
+    sanic_req = generate_sanic_request(method='GET')
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/dimvalue")
+    assert 200 == resp.status
+    assert str(channel*10) == resp.body.decode('utf-8')
+    mock_velbus.assert_conversation_happened_exactly()
 
 
 @pytest.mark.asyncio

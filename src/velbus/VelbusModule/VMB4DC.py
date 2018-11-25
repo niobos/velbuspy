@@ -78,7 +78,7 @@ class VMB4DCChannel(VelbusModuleChannel):
         if isinstance(vbm.message, DimmercontrollerStatus):
             dimmer_status = vbm.message
 
-            if dimmer_status.channel == self.address:
+            if dimmer_status.channel == self.channel:
                 self.state = {
                     'dimvalue': dimmer_status.dimvalue,
                     # 'status': relay_status.disabled_inhibit_force,
@@ -87,7 +87,7 @@ class VMB4DCChannel(VelbusModuleChannel):
                 }
 
     async def _get_status(self, bus: VelbusProtocol):
-        if self.state is None:
+        if "dimvalue" not in self.state:
             _ = await bus.velbus_query(
                 VelbusFrame(
                     address=self.address,
