@@ -1,6 +1,7 @@
 import json
 from unittest.mock import Mock
 
+import jsonpatch
 import pytest
 
 from velbus import HttpApi
@@ -100,21 +101,24 @@ async def test_ws(generate_sanic_request, mock_velbus, module_address, channel):
     resp = await module_req(sanic_req, f"{module_address:02x}", f"/{channel}/position")
     assert 200 == resp.status
 
+    client_state = dict()
+
+    def receive(ops: str):
+        patch = jsonpatch.JsonPatch(json.loads(ops))
+        nonlocal client_state
+        client_state = patch.apply(client_state)
+        return make_awaitable(None)
+
     ws = Mock()
     ws.subscribed_modules = {module_address}
-    ws.send = Mock(return_value=make_awaitable(None))
+    ws.send = receive
     HttpApi.ws_clients.add(ws)
 
     sanic_req = generate_sanic_request()
     await HttpApi.ws_client_listen_module(VelbusHttpProtocol(sanic_req), module_address, ws)
-    ws.send.assert_called_once()
-    json_op = json.loads(ws.send.call_args[0][0])
-    assert 1 == len(json_op)
-    assert "add" == json_op[0]["op"]
-    assert f"/{module_address:02x}" == json_op[0]["path"]
-    assert isinstance(json_op[0]["value"], dict)
-    assert 7 == json_op[0]["value"][str(channel)]["position"]
-    ws.send.reset_mock()
+
+    assert "off" == client_state[f"{module_address:02x}"][str(channel)]["status"]
+    assert 7 == client_state[f"{module_address:02x}"][str(channel)]["position"]
 
     HttpApi.message(VelbusFrame(address=module_address, message=BlindStatusV2(
         channel=channel,
@@ -122,12 +126,7 @@ async def test_ws(generate_sanic_request, mock_velbus, module_address, channel):
         blind_position=7,
     )))
 
-    ws.send.assert_any_call(json.dumps([{
-        "op": "add",
-        "path": f"/{module_address:02x}/{channel}/status",
-        "value": "up",
-    }]))
-    ws.send.reset_mock()
+    assert "up" == client_state[f"{module_address:02x}"][str(channel)]["status"]
 
     HttpApi.message(VelbusFrame(address=module_address, message=BlindStatusV2(
         channel=channel,
@@ -135,14 +134,5 @@ async def test_ws(generate_sanic_request, mock_velbus, module_address, channel):
         blind_position=0,
     )))
 
-    ws.send.assert_any_call(json.dumps([{
-        "op": "add",
-        "path": f"/{module_address:02x}/{channel}/status",
-        "value": "off",
-    }]))
-    ws.send.assert_any_call(json.dumps([{
-        "op": "add",
-        "path": f"/{module_address:02x}/{channel}/position",
-        "value": 0,
-    }]))
-    ws.send.reset_mock()
+    assert "off" == client_state[f"{module_address:02x}"][str(channel)]["status"]
+    assert 0 == client_state[f"{module_address:02x}"][str(channel)]["position"]
