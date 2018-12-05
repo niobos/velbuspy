@@ -135,13 +135,14 @@ class VelbusProtocol(asyncio.Protocol):
         if response_address is None:
             response_address = question.address
 
-        reply = asyncio.get_event_loop().create_future()
+        reply: asyncio.Future = asyncio.get_event_loop().create_future()
 
         def message_filter(vbm: VelbusFrame):
             if vbm.address == response_address and \
                     isinstance(vbm.message, response_type) and \
                     additional_check(vbm):
-                reply.set_result(vbm)
+                if not reply.done():
+                    reply.set_result(vbm)
 
         self.listeners.add(message_filter)
 
