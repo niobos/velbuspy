@@ -14,6 +14,7 @@ setup(
         'sanic',
         'bitstruct',
         'attrs>=17.3.0',
+        'structattr',
     ],
     setup_requires=[
         'pytest-runner'
