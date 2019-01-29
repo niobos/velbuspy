@@ -45,7 +45,7 @@ class VelbusModule():
         # URL-structure as similar as possible
 
     @property
-    def state(self) -> typing.Mapping:
+    def state(self) -> typing.Dict:
         return self._state
 
     @state.setter

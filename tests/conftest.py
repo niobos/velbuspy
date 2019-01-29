@@ -13,6 +13,7 @@ import sanic.request
 
 from velbus import HttpApi
 from velbus.VelbusProtocol import VelbusProtocol, VelbusSerialProtocol
+from velbus.VelbusMessage.VelbusFrame import VelbusFrame
 
 
 @pytest.fixture

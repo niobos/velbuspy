@@ -68,6 +68,7 @@ class TemperatureSensorStatus(VelbusMessage):
 
     # byte5
     temperature: FixedPointSInt(7, 1) = 0
+    # A more detailed temperature is available in SensorTemperature
 
     # byte6
     set_temperature: FixedPointSInt(7, 1) = 0

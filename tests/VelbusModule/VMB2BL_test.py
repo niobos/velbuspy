@@ -1,8 +1,6 @@
-from unittest import mock
-
 import pytest
-from unittest.mock import patch
-from datetime import datetime
+import datetime
+from freezegun import freeze_time
 
 from velbus.HttpApi import module_req, message
 from velbus.VelbusMessage.VelbusFrame import VelbusFrame
@@ -76,9 +74,7 @@ async def test_VMB2BL_status_position_estimation(generate_sanic_request, mock_ve
         ),
     ])
 
-    with patch('velbus.VelbusModule.VMB2BL.datetime') as faketime:
-        faketime.utcnow = mock.Mock(return_value=datetime.utcfromtimestamp(1500000000))
-
+    with freeze_time() as frozen_datetime:
         req = generate_sanic_request()
         resp = await module_req(req, '11', '/1/position')
 
@@ -95,7 +91,7 @@ async def test_VMB2BL_status_position_estimation(generate_sanic_request, mock_ve
             ),
         ))
 
-        faketime.utcnow = mock.Mock(return_value=datetime.utcfromtimestamp(1500000000 + 15))
+        frozen_datetime.tick(delta=datetime.timedelta(seconds=15))
 
         message(VelbusFrame(
             address=0x11,
@@ -118,7 +114,7 @@ async def test_VMB2BL_status_position_estimation(generate_sanic_request, mock_ve
             ),
         ))
 
-        faketime.utcnow = mock.Mock(return_value=datetime.utcfromtimestamp(1500000000 + 15 + 3))
+        frozen_datetime.tick(delta=datetime.timedelta(seconds=3))
 
         message(VelbusFrame(
             address=0x11,

@@ -24,5 +24,6 @@ setup(
         'pytest-asyncio',
         'pytest-mock',
         'jsonpatch',
+        'freezegun',
     ],
 )
