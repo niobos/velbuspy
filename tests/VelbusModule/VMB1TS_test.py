@@ -1,4 +1,7 @@
+import datetime
+
 import pytest
+from freezegun import freeze_time
 
 from velbus.HttpApi import module_req, message
 from velbus.VelbusMessage.VelbusFrame import VelbusFrame
@@ -71,6 +74,92 @@ async def test_VMB1TS_temperature(generate_sanic_request, module_address, mock_v
 
     assert 200 == resp.status
     assert f'22.0' == resp.body.decode('utf-8')
+
+
+@pytest.mark.asyncio
+async def test_VMB1TS_cached_temperature(generate_sanic_request, module_address, mock_velbus):
+    mock_velbus.set_expected_conversation([
+        VMB1TS_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
+                message=SensorTemperatureRequest(),
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=SensorTemperature(
+                    current_temperature=23,
+                ),
+            ).to_bytes()
+        ),
+        (
+            VelbusFrame(
+                address=module_address,
+                message=SensorTemperatureRequest(),
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=SensorTemperature(
+                    current_temperature=24,
+                ),
+            ).to_bytes()
+        ),
+        (
+            VelbusFrame(
+                address=module_address,
+                message=SensorTemperatureRequest(),
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=SensorTemperature(
+                    current_temperature=25,
+                ),
+            ).to_bytes()
+        ),
+    ])
+
+    with freeze_time() as frozen_datetime:
+        req = generate_sanic_request()
+        await module_req(req, f'{module_address:02x}', '/temperature')
+
+        resp = await module_req(req, f'{module_address:02x}', '/temperature')
+        # Should *not* re-request the temperature
+        # Should still return the "old" 23ºC
+        assert 200 == resp.status
+        assert f'23.0' == resp.body.decode('utf-8')
+
+        frozen_datetime.tick(delta=datetime.timedelta(seconds=15))
+
+        resp = await module_req(req, f'{module_address:02x}', '/temperature')
+        # Should *not* re-request the temperature
+        # Should still return the "old" 23ºC
+        assert 200 == resp.status
+        assert f'23.0' == resp.body.decode('utf-8')
+
+        req.headers = {
+            "Cache-Control": "max-age=30",
+        }
+        resp = await module_req(req, f'{module_address:02x}', '/temperature')
+        # Should *not* re-request the temperature
+        # Should still return the "old" 23ºC
+        assert 200 == resp.status
+        assert f'23.0' == resp.body.decode('utf-8')
+
+        req.headers = {
+            "Cache-Control": "max-age=10",
+        }
+        resp = await module_req(req, f'{module_address:02x}', '/temperature')
+        # *Should* re-request the temperature
+        assert 200 == resp.status
+        assert f'24.0' == resp.body.decode('utf-8')
+
+        frozen_datetime.tick(delta=datetime.timedelta(seconds=61))
+
+        req.headers = {}
+        resp = await module_req(req, f'{module_address:02x}', '/temperature')
+        # *Should* re-request the temperature
+        assert 200 == resp.status
+        assert f'25.0' == resp.body.decode('utf-8')
 
 
 @pytest.mark.asyncio
