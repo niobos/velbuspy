@@ -4,7 +4,7 @@ import datetime
 import pytest
 import jsonpatch
 
-from JsonPatchDict import JsonPatchDict, JsonPatchOperation, JsonPatch
+from velbus.JsonPatchDict import JsonPatchDict, JsonPatchOperation, JsonPatch
 
 
 def test_memory_leak():

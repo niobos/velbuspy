@@ -48,3 +48,9 @@ Quickstart
 7. Point your browser to http://localhost:8080/
 
 [VirtualEnv]: https://virtualenv.pypa.io/en/latest/
+
+
+Debugging tips
+--------------
+
+You can fake a serial port with `socat`: `socat -d -d PTY -`

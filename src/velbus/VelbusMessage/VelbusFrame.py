@@ -9,7 +9,7 @@ from .ModuleTypeRequest import ModuleTypeRequest
 
 @attr.s(slots=True)
 class VelbusFrame:
-    address = attr.ib(convert=UInt(8))
+    address = attr.ib(converter=UInt(8))
     message = attr.ib()
 
     @classmethod

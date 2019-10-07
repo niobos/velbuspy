@@ -36,8 +36,8 @@ def give_request_ip(req: sanic.request):
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures('clean_http_api')
-async def test_get_module():
-    req = sanic.request.Request(b'/modules/01/', {}, 1.1, 'GET', None)
+async def test_get_module(generate_sanic_request):
+    req = generate_sanic_request(path='/modules/01/')
     give_request_ip(req)
 
     def velbus_query(self,
@@ -67,8 +67,8 @@ def CoroMock():
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures('clean_http_api')
-async def test_get_module_timeout():
-    req = sanic.request.Request(b'/modules/aA/', {}, 1.1, 'GET', None)
+async def test_get_module_timeout(generate_sanic_request):
+    req = generate_sanic_request(path='/modules/aA/')
     give_request_ip(req)
 
     with patch('velbus.VelbusProtocol.VelbusHttpProtocol.process_message', new_callable=CoroMock) as velbus_pm:
@@ -92,8 +92,8 @@ async def test_get_module_timeout():
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures('clean_http_api')
-async def test_get_module_parallel_timeout():
-    req = sanic.request.Request(b'/modules/aA/', {}, 1.1, 'GET', None)
+async def test_get_module_parallel_timeout(generate_sanic_request):
+    req = generate_sanic_request(path='/modules/aA/')
     give_request_ip(req)
 
     with patch('velbus.VelbusProtocol.VelbusHttpProtocol.process_message', new_callable=CoroMock):

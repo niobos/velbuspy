@@ -28,7 +28,7 @@ def clean_http_api(request):
 @pytest.fixture
 def sanic_req(request):
     del request  # unused
-    req = sanic.request.Request(b'/modules/01/', {}, 1.1, 'GET', None)
+    req = sanic.request.Request(b'/modules/01/', {}, 1.1, 'GET', None, None)
     req._socket = None
     req._ip = '127.0.0.1'
     req._port = 9
@@ -43,8 +43,11 @@ def generate_sanic_request(request):
             path: str = '/',
             method: str = 'GET',
             body: str = '',
+            headers: dict = None,
     ):
-        req = sanic.request.Request(path.encode('utf-8'), {}, 1.1, method, None)
+        if headers is None:
+            headers = {}
+        req = sanic.request.Request(path.encode('utf-8'), headers, 1.1, method, None, None)
         req.body = body.encode('utf-8')
         req._socket = None
         req._ip = '127.0.0.1'
