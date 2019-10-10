@@ -1,14 +1,27 @@
+import asyncio
+import dataclasses
+import datetime
+import inspect
 import re
 import typing
 from typing import Callable, Union, Awaitable
 
 import sanic.response
 import sanic.request
+import sortedcontainers
 
 from ..VelbusProtocol import VelbusProtocol
 from ..VelbusMessage.VelbusFrame import VelbusFrame
 from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
 from ..JsonPatchDict import JsonPatchDict
+
+
+@dataclasses.dataclass()
+class DelayedCall:
+    """
+    Base class for delayed calls. Subclass this to include additional attributes
+    """
+    when: datetime.datetime
 
 
 class VelbusModule:
@@ -43,6 +56,9 @@ class VelbusModule:
         #
         # It is advisable to keep the structure of `state` and the
         # URL-structure as similar as possible
+
+        self._process_queue = sortedcontainers.SortedList(key=lambda e: e.when)
+        self._next_delayed_call: typing.Optional[asyncio.TimerHandle] = None
 
     @property
     def state(self) -> typing.Dict:
@@ -140,3 +156,66 @@ class VelbusModule:
         return sanic.response.text(
             "{} at 0x{:02x}\r\n".format(self.__class__.__name__, self.address)
         )
+
+    def delayed_call(self, call_info: DelayedCall) -> typing.Any:
+        """
+        Function called after a delay.
+        If it returns an awaitable (or is an async function), it is awaited for
+        """
+        raise NotImplementedError("Must be overridden")
+
+    def _delayed_call(self) -> None:
+        now = datetime.datetime.now(tz=datetime.timezone.utc)
+
+        while len(self._process_queue) and self._process_queue[0].when <= now:
+            call_info = self._process_queue.pop(0)
+            response = self.delayed_call(call_info)
+            if inspect.isawaitable(response):
+                asyncio.ensure_future(response)
+
+        self._schedule_next_delayed_call()
+
+    def _schedule_next_delayed_call(self) -> None:
+        if self._next_delayed_call is not None:
+            self._next_delayed_call.cancel()
+            self._next_delayed_call = None
+
+        if len(self._process_queue) == 0:
+            return
+
+        when = self._process_queue[0].when
+        delay = VelbusModule.datetime_to_relative_seconds(when)
+        self._next_delayed_call = asyncio.get_event_loop().call_later(delay, self._delayed_call)
+
+    @property
+    def delayed_calls(self) -> typing.Iterable[DelayedCall]:
+        return self._process_queue
+
+    @delayed_calls.setter
+    def delayed_calls(self, value: typing.Iterable[DelayedCall]):
+        self._process_queue.clear()
+        for call in value:
+            if call.when is None:
+                call.when = datetime.datetime.now(datetime.timezone.utc)
+
+            if call.when.tzinfo is None:
+                call.when = call.when.replace(tzinfo=datetime.timezone.utc)
+
+            self._process_queue.add(call)
+
+        self._schedule_next_delayed_call()
+
+    @staticmethod
+    def datetime_to_relative_seconds(timestamp: datetime.datetime, reference: datetime.datetime = None) -> float:
+        if reference is None:
+            reference = datetime.datetime.now(tz=datetime.timezone.utc)
+        if reference.tzinfo is None:
+            # assume UTC
+            reference = reference.replace(tzinfo=datetime.timezone.utc)
+
+        if timestamp.tzinfo is None:
+            # assume UTC
+            timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
+
+        delta = timestamp - reference
+        return delta.total_seconds()

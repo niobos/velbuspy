@@ -15,6 +15,8 @@ setup(
         'bitstruct',
         'attrs>=17.3.0',
         'structattr',
+        'sortedcontainers',
+        'python-dateutil ',
     ],
     setup_requires=[
         'pytest-runner'
