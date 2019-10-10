@@ -23,8 +23,7 @@ async def test_reply(mock_velbus, module_address):
             ).to_bytes()
         )
     ])
-    bus = VelbusProtocol()
-    bus.client_id = "INTERNAL"
+    bus = VelbusProtocol(client_id="INTERNAL")
     await bus.velbus_query(
         VelbusFrame(
             address=module_address,
@@ -50,8 +49,7 @@ async def test_no_reply(mock_velbus):
             ).to_bytes()
         ),
     ])
-    bus = VelbusProtocol()
-    bus.client_id = "INTERNAL"
+    bus = VelbusProtocol(client_id="INTERNAL")
 
     with pytest.raises(TimeoutError):
         await bus.velbus_query(

@@ -110,8 +110,7 @@ except OSError as e:
     logger.warning("Could not set DTR/RTS status, trying anyway... ({})".format(str(e)))
 
 # send an interface status request, so we can quit right away if the bus is not active
-internal = VelbusProtocol()
-internal.client_id = "INTERNAL"
+internal = VelbusProtocol(client_id="INTERNAL")
 loop.run_until_complete(internal.process_message(VelbusFrame(address=0, message=InterfaceStatusRequest())))
 # The reply will be read as soon as we enter the loop
 

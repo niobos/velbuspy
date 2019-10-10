@@ -6,6 +6,16 @@ This project is an HTTP(s) interface to the [Velbus] domotica system.
 [Velbus]: https://www.velbus.eu/
 
 
+Dependencies
+------------
+
+On debian:
+
+ * `python3` 3.7 or higher (default on buster, not supported on stretch)
+ * `build-essential`, `python3-dev` to compile C-extensions for some of the Python dependencies
+ * (optional) `nodejs` and `npm` for the React Web Frontend
+
+
 Quickstart
 ----------
 

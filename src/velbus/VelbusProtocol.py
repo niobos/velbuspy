@@ -34,6 +34,10 @@ class VelbusProtocol(asyncio.Protocol):
     tcp_clients: 'typing.Set[VelbusProtocol]' = set()
     listeners = set()
 
+    def __init__(self, client_id: str):
+        super().__init__()
+        self.client_id = client_id
+
     def connection_made(self, transport):
         self.transport = transport
         self.rx_buf = bytearray()
@@ -158,6 +162,9 @@ class VelbusProtocol(asyncio.Protocol):
 
 
 class VelbusTcpProtocol(VelbusProtocol):
+    def __init__(self):
+        super().__init__(client_id="will be overridden at connect")
+
     def connection_made(self, transport):
         self.client_id = "TCP:" + format_sockaddr(transport.get_extra_info('peername'))
         super().connection_made(transport)
@@ -180,9 +187,11 @@ class VelbusTcpProtocol(VelbusProtocol):
 
 
 class VelbusSerialProtocol(VelbusProtocol):
+    def __init__(self):
+        super().__init__(client_id="SERIAL")
+
     def connection_made(self, transport):
         VelbusProtocol.serial_client = self
-        self.client_id = "SERIAL"
         self.paused = False
         super().connection_made(transport)
 
@@ -228,16 +237,14 @@ class VelbusSerialProtocol(VelbusProtocol):
 
 class VelbusHttpProtocol(VelbusProtocol):
     def __init__(self, request):
-        super().__init__()
-        self.client_id = "HTTP:{ip}:{port}{path}".format(
+        super().__init__(client_id="HTTP:{ip}:{port}{path}".format(
             ip=request.ip,
             port=request.port,
             path=request.path
-        )
+        ))
 
 
 class VelbusDelayedProtocol(VelbusProtocol):
     def __init__(self, original_protocol: VelbusProtocol):
-        super().__init__()
-        self.client_id = f"DELAYED<{datetime.datetime.utcnow().isoformat()}>" \
-                         f":{original_protocol.client_id}"
+        super().__init__(client_id=f"DELAYED<{datetime.datetime.utcnow().isoformat()}>"
+                         f":{original_protocol.client_id}")
