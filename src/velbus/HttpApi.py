@@ -33,7 +33,7 @@ Setting the `null` value means the module was not found.
 When the module is removed from the server, it is also removed from the client
 The client can re-request a subscription if it wants to.
 """
-
+import contextvars
 import inspect
 import json
 import logging
@@ -61,6 +61,9 @@ from .VelbusModule.UnknownModule import UnknownModule
 
 modules: Dict[int, Union[asyncio.Future, Awaitable[VelbusModule]]] = dict()
 ws_clients = set()
+
+sanic_request = contextvars.ContextVar('sanic_request')
+sanic_request_datetime = contextvars.ContextVar('sanic_request_datetime')
 
 
 def timestamp(request: sanic.request) -> sanic.response:
@@ -99,6 +102,9 @@ async def delete_module(request: sanic.request, address: str) -> sanic.response:
 
 
 async def module_req(request: sanic.request, address: str, module_path: str) -> sanic.response:
+    sanic_request.set(request)
+    sanic_request_datetime.set(datetime.datetime.utcnow())
+
     address = int(address, 16)
     bus = VelbusHttpProtocol(request)
     mod = await get_module(bus, address)
