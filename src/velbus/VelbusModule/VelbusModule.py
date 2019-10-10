@@ -11,7 +11,7 @@ from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
 from ..JsonPatchDict import JsonPatchDict
 
 
-class VelbusModule():
+class VelbusModule:
     def __init__(self,
                  bus: VelbusProtocol,
                  address: int,

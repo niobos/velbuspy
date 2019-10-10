@@ -1,9 +1,8 @@
 import asyncio
-import concurrent
 import datetime
 import inspect
 import logging
-import time
+import typing
 
 from .VelbusMessage.VelbusFrame import VelbusFrame
 from .VelbusMessage.BusActive import BusActive
@@ -32,7 +31,7 @@ def format_sockaddr(sockaddr):
 
 class VelbusProtocol(asyncio.Protocol):
     serial_client: 'VelbusProtocol' = None
-    tcp_clients: 'Set[VelbusProtocol]' = set()
+    tcp_clients: 'typing.Set[VelbusProtocol]' = set()
     listeners = set()
 
     def connection_made(self, transport):
@@ -229,6 +228,7 @@ class VelbusSerialProtocol(VelbusProtocol):
 
 class VelbusHttpProtocol(VelbusProtocol):
     def __init__(self, request):
+        super().__init__()
         self.client_id = "HTTP:{ip}:{port}{path}".format(
             ip=request.ip,
             port=request.port,
@@ -238,5 +238,6 @@ class VelbusHttpProtocol(VelbusProtocol):
 
 class VelbusDelayedProtocol(VelbusProtocol):
     def __init__(self, original_protocol: VelbusProtocol):
+        super().__init__()
         self.client_id = f"DELAYED<{datetime.datetime.utcnow().isoformat()}>" \
                          f":{original_protocol.client_id}"
