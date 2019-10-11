@@ -1,4 +1,8 @@
+import asyncio
+import datetime
 import json
+
+import freezegun
 import pytest
 
 import sanic.response
@@ -15,6 +19,7 @@ from velbus.VelbusMessage.SetDimvalue import SetDimvalue
 from velbus.VelbusMessage.DimmercontrollerStatus import DimmercontrollerStatus
 from velbus.VelbusModule.VMB4DC import VMB4DC as VMB4DC_mod
 
+from .. import utils
 
 _ = VMB4DC_mod  # load module to enable processing
 
@@ -92,9 +97,8 @@ async def test_put_dimvalue_int(generate_sanic_request, mock_velbus, module_addr
 
     sanic_req = generate_sanic_request(method='PUT', body='100')
     resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/dimvalue")
-    assert 202 == resp.status
+    assert resp.status // 100 == 2
 
-    await HttpApi.modules[module_address].result().submodules[channel].queue_processing_task
     mock_velbus.assert_conversation_happened_exactly()
 
 
@@ -140,9 +144,8 @@ async def test_put_dimvalue_dict(generate_sanic_request, mock_velbus, module_add
         body=json.dumps({"dimvalue": 100, "dimspeed": 5})
     )
     resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/dimvalue")
-    assert 202 == resp.status
+    assert resp.status // 100 == 2
 
-    await HttpApi.modules[module_address].result().submodules[channel].queue_processing_task
     mock_velbus.assert_conversation_happened_exactly()
 
 
@@ -189,15 +192,14 @@ async def test_put_dimvalue_list_single(generate_sanic_request, mock_velbus, mod
         body=json.dumps([{"dimvalue": 100, "dimspeed": 5}])
     )
     resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/dimvalue")
-    assert 202 == resp.status
+    assert resp.status // 100 == 2
 
-    await HttpApi.modules[module_address].result().submodules[channel].queue_processing_task
     mock_velbus.assert_conversation_happened_exactly()
 
 
+@freezegun.freeze_time("2000-01-01 00:00:00", tick=True)
 @pytest.mark.asyncio
-async def test_put_dimvalue_list(generate_sanic_request, mock_velbus, module_address, channel,
-                                 fake_asyncio_sleep):
+async def test_put_dimvalue_list(generate_sanic_request, mock_velbus, module_address, channel):
     mock_velbus.set_expected_conversation([
         VMB4DC_module_info_exchange(module_address),
     ])
@@ -205,8 +207,8 @@ async def test_put_dimvalue_list(generate_sanic_request, mock_velbus, module_add
     sanic_req = generate_sanic_request(
         method='PUT',
         body=json.dumps([
-            {"dimvalue": 100, "timeout": 1},
-            {"dimvalue": 20}
+            {"dimvalue": 100},
+            {"dimvalue": 20, "when": "2000-01-01 00:00:00.1"}
         ])
     )
     # Do call to wrong endpoint
@@ -235,12 +237,8 @@ async def test_put_dimvalue_list(generate_sanic_request, mock_velbus, module_add
     ])
     resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/e_dimvalue")
     assert 202 == resp.status
-    # process_queue is now running async
-    # Wait until it calls asyncio.sleep()
 
-    sleep_call = await fake_asyncio_sleep.new_sleep_call(from_function='process_queue')
-    # We are at the first sleep() call, inspect
-    assert 1 == sleep_call.delay
+    await asyncio.sleep(0.05)
     mock_velbus.assert_conversation_happened_exactly()
 
     mock_velbus.set_expected_conversation([
@@ -262,23 +260,16 @@ async def test_put_dimvalue_list(generate_sanic_request, mock_velbus, module_add
             ).to_bytes()
         ),
     ])
-    sleep_call.return_asap()  # Consider sleep() to be done
-    # process_queue will now set the next dimvalue, and call asyncio.sleep(0)
 
-    sleep_call = await fake_asyncio_sleep.new_sleep_call(from_function='process_queue')
-    # we are at the second sleep() call, inspect
-    assert 0 == sleep_call.delay
+    await asyncio.sleep(0.1)  # until 0.15
     mock_velbus.assert_conversation_happened_exactly()
 
-    sleep_call.return_asap()  # Consider sleep() to be done
-
-    # Last step done, queue should resolve now:
-    await HttpApi.modules[module_address].result().submodules[channel].queue_processing_task
+    assert len(HttpApi.modules[module_address].result().submodules[channel].delayed_calls) == 0
 
 
+@freezegun.freeze_time("2000-01-01 00:00:00", tick=True)
 @pytest.mark.asyncio
-async def test_put_dimvalue_list_cancel(generate_sanic_request, mock_velbus, module_address, channel,
-                                        fake_asyncio_sleep):
+async def test_put_dimvalue_list_cancel(generate_sanic_request, mock_velbus, module_address, channel):
     mock_velbus.set_expected_conversation([
         VMB4DC_module_info_exchange(module_address),
         (
@@ -303,21 +294,21 @@ async def test_put_dimvalue_list_cancel(generate_sanic_request, mock_velbus, mod
     sanic_req = generate_sanic_request(
         method='PUT',
         body=json.dumps([
-            {"dimvalue": 100, "timeout": 11},
-            {"dimvalue": 20}
+            {"dimvalue": 100},
+            {"dimvalue": 20, "when": "2000-01-01 00:00:00.1"}
         ])
     )
     resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/e_dimvalue")
     assert 202 == resp.status
-    # process_queue is now running async
-    # Wait until it calls asyncio.sleep()
 
-    sleep_call = await fake_asyncio_sleep.new_sleep_call(from_function='process_queue')
-    # We are at the first sleep() call, inspect
-    assert 11 == sleep_call.delay
+    await asyncio.sleep(0.05)
     mock_velbus.assert_conversation_happened_exactly()
 
     # Now interrupt this sleep with a new HTTP-call
+    sanic_req = generate_sanic_request(
+        method='PUT',
+        body='42'
+    )
     mock_velbus.set_expected_conversation([
         (
             VelbusFrame(
@@ -337,22 +328,53 @@ async def test_put_dimvalue_list_cancel(generate_sanic_request, mock_velbus, mod
             ).to_bytes()
         ),
     ])
+
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/e_dimvalue")
+    assert resp.status // 100 == 2
+
+    await asyncio.sleep(0.1)  # until 0.15
+    mock_velbus.assert_conversation_happened_exactly()
+
+    assert len(HttpApi.modules[module_address].result().submodules[channel].delayed_calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_get_edimvalue(generate_sanic_request, mock_velbus, module_address, channel):
     sanic_req = generate_sanic_request(
         method='PUT',
-        body='42'
+        body=json.dumps([
+            {"dimvalue": 100},
+            {"dimvalue": 20, "when": datetime.datetime.now().isoformat()}
+        ])
     )
-    old_sleep_call = sleep_call
+    mock_velbus.set_expected_conversation([
+        VMB4DC_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
+                message=SetDimvalue(
+                    channel=channel,
+                    dimvalue=100,
+                    dimspeed=0,
+                )
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=DimmercontrollerStatus(
+                    channel=channel,
+                    dimvalue=100,
+                )
+            ).to_bytes()
+        ),
+    ])
+
     resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/e_dimvalue")
-    assert 202 == resp.status
-    # process_queue is now running async
-    # Wait until it calls asyncio.sleep()
-    sleep_call = await fake_asyncio_sleep.new_sleep_call(from_function='process_queue')
+    assert resp.status // 100 == 2
 
-    # we are at the first sleep() call after the interrupting call, inspect
-    assert old_sleep_call.cancelled()
-    assert 0 == sleep_call.delay
-    mock_velbus.assert_conversation_happened_exactly()
-    sleep_call.return_asap()
-
-    # Last step done, queue should resolve now:
-    await HttpApi.modules[module_address].result().submodules[channel].queue_processing_task
+    sanic_req = generate_sanic_request()
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/e_dimvalue")
+    assert resp.status == 200
+    resp = json.loads(resp.body)
+    assert len(resp) >= 1  # maybe the "now" action is still in the list, maybe it has already happened
+    assert resp[-1]['dimvalue'] == 20
+    assert isinstance(resp[-1]['when'], str)

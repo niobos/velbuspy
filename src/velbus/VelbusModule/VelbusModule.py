@@ -2,6 +2,7 @@ import asyncio
 import dataclasses
 import datetime
 import inspect
+import json
 import re
 import typing
 from typing import Callable, Union, Awaitable
@@ -22,6 +23,11 @@ class DelayedCall:
     Base class for delayed calls. Subclass this to include additional attributes
     """
     when: datetime.datetime
+
+    def as_dict(self) -> dict:
+        ret = dataclasses.asdict(self)
+        ret['when'] = self.when.isoformat()
+        return ret
 
 
 class VelbusModule:

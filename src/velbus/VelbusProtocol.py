@@ -248,3 +248,9 @@ class VelbusDelayedProtocol(VelbusProtocol):
     def __init__(self, original_protocol: VelbusProtocol):
         super().__init__(client_id=f"DELAYED<{datetime.datetime.utcnow().isoformat()}>"
                          f":{original_protocol.client_id}")
+
+
+class VelbusDelayedHttpProtocol(VelbusProtocol):
+    def __init__(self, original_timestamp: datetime.datetime, request):
+        super().__init__(client_id=f"DELAYED<{original_timestamp.isoformat()}>"
+                                   f":HTTP:{request.ip}:{request.port}{request.path}")

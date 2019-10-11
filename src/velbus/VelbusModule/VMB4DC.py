@@ -1,11 +1,12 @@
-import asyncio
-from typing import List, Callable, Union
+import dataclasses
+import typing
 
+import dateutil.parser
 import sanic.request
 import sanic.response
-import attr
 
 from ._registry import register
+from . import VelbusModule
 from .NestedAddressVelbusModule import NestedAddressVelbusModule, VelbusModuleChannel
 from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
 from ..VelbusMessage.ModuleInfo.VMB4DC import VMB4DC as VMB4DC_MI
@@ -13,18 +14,29 @@ from ..VelbusMessage.VelbusFrame import VelbusFrame
 from ..VelbusMessage.DimmercontrollerStatus import DimmercontrollerStatus
 from ..VelbusMessage.ModuleStatusRequest import ModuleStatusRequest
 from ..VelbusMessage.SetDimvalue import SetDimvalue
-from ..VelbusProtocol import VelbusProtocol, VelbusDelayedProtocol
+from ..VelbusProtocol import VelbusProtocol, VelbusDelayedHttpProtocol
+from .. import HttpApi
 
 
 class NonNative(Exception):
+    """
+    Exception raised when behaviour was requested that is available, but simulated
+    by this daemon, as opposed to native to the module.
+    """
     pass
 
 
-@attr.s(slots=True, auto_attribs=True)
-class DimStep:
+@dataclasses.dataclass()
+class DimStep(VelbusModule.DelayedCall):
     dimvalue: int  # 0-100
     dimspeed: int = 0  # 0-65536 seconds
-    timeout: int = 0  # duration of this step in seconds
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "DimStep":
+        when = d.pop('when', None)
+        if when is not None:
+            when = dateutil.parser.parse(when)
+        return cls(when=when, **d)  # may raise
 
 
 @register(VMB4DC_MI)
@@ -45,7 +57,7 @@ class VMB4DC(NestedAddressVelbusModule):
                  bus: VelbusProtocol,
                  address: int,
                  module_info: ModuleInfo = None,
-                 update_state_cb: Callable = lambda ops: None
+                 update_state_cb: typing.Callable = lambda ops: None
                  ):
         super().__init__(
             bus=bus,
@@ -62,7 +74,7 @@ class VMB4DCChannel(VelbusModuleChannel):
                  bus: VelbusProtocol,
                  channel: int,
                  parent_module: VMB4DC,
-                 update_state_cb: Callable = lambda ops: None,
+                 update_state_cb: typing.Callable = lambda ops: None,
                  ):
         super().__init__(
             bus=bus,
@@ -70,9 +82,6 @@ class VMB4DCChannel(VelbusModuleChannel):
             parent_module=parent_module,
             update_state_cb=update_state_cb,
         )
-        self.queue: List[DimStep] = []
-        self.queue_processing_task: asyncio.Task = asyncio.Future()
-        self.queue_processing_task.set_result(None)  # Initialize to a Done "task"
 
     def message(self, vbm: VelbusFrame):
         if isinstance(vbm.message, DimmercontrollerStatus):
@@ -134,41 +143,40 @@ class VMB4DCChannel(VelbusModuleChannel):
                 path_info=path_info,
                 request=request,
                 bus=bus,
-                raise_non_native=True,
+                allow_simulated_behaviour=False,
             )
         except NonNative:
             return sanic.response.text('Bad Request: non-native request on native endpoint', 400)
 
-    async def process_queue(self,
-                            bus: VelbusProtocol):
-        while len(self.queue):
-            next_step = self.queue.pop(0)
-
-            _ = await bus.velbus_query(
-                VelbusFrame(
-                    address=self.address,
-                    message=SetDimvalue(
-                        channel=self.channel,
-                        dimvalue=next_step.dimvalue,
-                        dimspeed=next_step.dimspeed,
-                    ),
+    async def delayed_call(self, dim_step: DimStep) -> typing.Any:
+        bus = VelbusDelayedHttpProtocol(original_timestamp=HttpApi.sanic_request_datetime.get(),
+                                        request=HttpApi.sanic_request.get())
+        _ = await bus.velbus_query(
+            VelbusFrame(
+                address=self.address,
+                message=SetDimvalue(
+                    channel=self.channel,
+                    dimvalue=dim_step.dimvalue,
+                    dimspeed=dim_step.dimspeed,
                 ),
-                DimmercontrollerStatus,
-                additional_check=(lambda vbm: vbm.message.channel == self.channel),
-            )
+            ),
+            DimmercontrollerStatus,
+            additional_check=(lambda vbm: vbm.message.channel == self.channel),
+        )
 
-            await asyncio.sleep(next_step.timeout)
+        return dim_step.dimvalue
 
     async def e_dimvalue_PUT(self,
                              path_info: str,
                              request: sanic.request,
                              bus: VelbusProtocol,
-                             raise_non_native: bool = False,
+                             allow_simulated_behaviour: bool = True,
                              ) -> sanic.response.HTTPResponse:
         """
         Enhanced dimvalue endpoint.
         Some features are simulated by this daemon, they are not executed
-        by the Velbus module.
+        by the Velbus module. If allow_simulated_behaviour is not True,
+        a NonNative exception is raised in this case.
         """
         if path_info != '':
             return sanic.response.text('Not found', status=404)
@@ -176,43 +184,48 @@ class VMB4DCChannel(VelbusModuleChannel):
         requested_status = request.json
 
         if isinstance(requested_status, int):
+            requested_status = {
+                'dimvalue': requested_status
+            }
+
+        if isinstance(requested_status, dict):
             requested_status = [
-                DimStep(
-                    dimvalue=requested_status,
-                )
+                requested_status
             ]
 
-        elif isinstance(requested_status, dict):
+        if isinstance(requested_status, list):
             try:
                 requested_status = [
-                    DimStep(**requested_status)
-                ]
-            except TypeError as e:
-                return sanic.response.text(f"Bad Request: {e}", 400)
-
-        elif isinstance(requested_status, list):
-            try:
-                requested_status = [
-                    DimStep(**s)
+                    DimStep.from_dict(s)
                     for s in requested_status
                 ]
             except TypeError as e:
                 return sanic.response.text(f"Bad Request: {e}", 400)
+
             if len(requested_status) == 0:
                 return sanic.response.text("Bad request: empty list", 400)
-            elif len(requested_status) > 1:
-                if raise_non_native:
+            if not allow_simulated_behaviour:
+                if len(requested_status) > 1:
+                    raise NonNative()
+                if requested_status[0].when is not None:
                     raise NonNative()
 
         else:
             return sanic.response.text('Bad Request: could not parse PUT body', 400)
 
-        if not self.queue_processing_task.done():
-            self.queue_processing_task.cancel()
-        self.queue = requested_status
-        self.queue_processing_task = asyncio.get_event_loop().create_task(
-            self.process_queue(
-                bus=VelbusDelayedProtocol(bus),
-            ))
+        try:
+            self.delayed_calls = requested_status
+        except ValueError as e:
+            return sanic.response.text('Bad Request: could not parse PUT body: ' + str(e), 400)
 
         return sanic.response.text("OK", 202)
+
+    async def e_dimvalue_GET(self,
+                             path_info: str,
+                             request: sanic.request,
+                             bus: VelbusProtocol
+                             ) -> sanic.response.HTTPResponse:
+        return sanic.response.json([
+            call.as_dict()
+            for call in self.delayed_calls
+        ])
