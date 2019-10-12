@@ -1,12 +1,13 @@
 import asyncio
 import dataclasses
 import datetime
+import functools
 import inspect
-import json
 import re
 import typing
 from typing import Callable, Union, Awaitable
 
+import dateutil.parser
 import sanic.response
 import sanic.request
 import sortedcontainers
@@ -18,16 +19,66 @@ from ..JsonPatchDict import JsonPatchDict
 
 
 @dataclasses.dataclass()
+@functools.total_ordering
 class DelayedCall:
     """
     Base class for delayed calls. Subclass this to include additional attributes
+
+    `when` is either None (to indicate right away), or a datetime object. The constructor
+    also accepts a string (which is passed through `datetime.parser.parse()`, or an integer/float
+    indicating that many seconds from now.
     """
-    when: datetime.datetime
+    when: datetime.datetime = None
+
+    def __post_init__(self):
+        if isinstance(self.when, datetime.datetime):
+            pass
+        elif self.when is None:
+            pass
+        elif isinstance(self.when, str):
+            self.when = dateutil.parser.parse(self.when)
+        elif isinstance(self.when, int) or isinstance(self.when, float):
+            self.when = datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(seconds=self.when)
+        else:
+            raise TypeError(f"Unrecognized type for `when`: {type(self.when)}")
+
+        if self.when is not None and self.when.tzinfo is None:
+            self.when = self.when.replace(tzinfo=datetime.timezone.utc)
+
+    def seconds_from_now(self, reference: datetime.datetime = None):
+        if self.when is None:
+            return 0
+
+        if reference is None:
+            reference = datetime.datetime.now(tz=datetime.timezone.utc)
+        if reference.tzinfo is None:
+            # assume UTC
+            reference = reference.replace(tzinfo=datetime.timezone.utc)
+
+        delta = self.when - reference
+        return delta.total_seconds()
 
     def as_dict(self) -> dict:
         ret = dataclasses.asdict(self)
-        ret['when'] = self.when.isoformat()
+        if self.when is None:
+            ret['when'] = None
+        else:
+            ret['when'] = self.when.isoformat()
         return ret
+
+    def __eq__(self, other):
+        if not isinstance(other, DelayedCall):
+            return False
+        return self.when == other.when
+
+    def __gt__(self, other):
+        if not isinstance(other, DelayedCall):
+            raise TypeError(f"Can't compare DelayedCall with {type(other)}")
+        if self.when is None:
+            return False  # None is always less than other
+        if other.when is None:
+            return True  # None is always less than self
+        return self.when > other.when
 
 
 class VelbusModule:
@@ -63,7 +114,7 @@ class VelbusModule:
         # It is advisable to keep the structure of `state` and the
         # URL-structure as similar as possible
 
-        self._process_queue = sortedcontainers.SortedList(key=lambda e: e.when)
+        self._process_queue = sortedcontainers.SortedList()
         self._next_delayed_call: typing.Optional[asyncio.TimerHandle] = None
 
     @property
@@ -173,7 +224,7 @@ class VelbusModule:
     def _delayed_call(self) -> None:
         now = datetime.datetime.now(tz=datetime.timezone.utc)
 
-        while len(self._process_queue) and self._process_queue[0].when <= now:
+        while len(self._process_queue) and self._process_queue[0].seconds_from_now(now) <= 0:
             call_info = self._process_queue.pop(0)
             response = self.delayed_call(call_info)
             if inspect.isawaitable(response):
@@ -189,8 +240,7 @@ class VelbusModule:
         if len(self._process_queue) == 0:
             return
 
-        when = self._process_queue[0].when
-        delay = VelbusModule.datetime_to_relative_seconds(when)
+        delay = self._process_queue[0].seconds_from_now()
         self._next_delayed_call = asyncio.get_event_loop().call_later(delay, self._delayed_call)
 
     @property
@@ -201,27 +251,6 @@ class VelbusModule:
     def delayed_calls(self, value: typing.Iterable[DelayedCall]):
         self._process_queue.clear()
         for call in value:
-            if call.when is None:
-                call.when = datetime.datetime.now(datetime.timezone.utc)
-
-            if call.when.tzinfo is None:
-                call.when = call.when.replace(tzinfo=datetime.timezone.utc)
-
             self._process_queue.add(call)
 
         self._schedule_next_delayed_call()
-
-    @staticmethod
-    def datetime_to_relative_seconds(timestamp: datetime.datetime, reference: datetime.datetime = None) -> float:
-        if reference is None:
-            reference = datetime.datetime.now(tz=datetime.timezone.utc)
-        if reference.tzinfo is None:
-            # assume UTC
-            reference = reference.replace(tzinfo=datetime.timezone.utc)
-
-        if timestamp.tzinfo is None:
-            # assume UTC
-            timestamp = timestamp.replace(tzinfo=datetime.timezone.utc)
-
-        delta = timestamp - reference
-        return delta.total_seconds()

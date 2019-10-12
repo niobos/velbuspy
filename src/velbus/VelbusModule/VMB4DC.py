@@ -28,15 +28,8 @@ class NonNative(Exception):
 
 @dataclasses.dataclass()
 class DimStep(VelbusModule.DelayedCall):
-    dimvalue: int  # 0-100
+    dimvalue: int = 0  # 0-100
     dimspeed: int = 0  # 0-65536 seconds
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "DimStep":
-        when = d.pop('when', None)
-        if when is not None:
-            when = dateutil.parser.parse(when)
-        return cls(when=when, **d)  # may raise
 
 
 @register(VMB4DC_MI)
@@ -196,10 +189,10 @@ class VMB4DCChannel(VelbusModuleChannel):
         if isinstance(requested_status, list):
             try:
                 requested_status = [
-                    DimStep.from_dict(s)
+                    DimStep(**s)
                     for s in requested_status
                 ]
-            except TypeError as e:
+            except (KeyError, ValueError, TypeError) as e:
                 return sanic.response.text(f"Bad Request: {e}", 400)
 
             if len(requested_status) == 0:
@@ -225,6 +218,9 @@ class VMB4DCChannel(VelbusModuleChannel):
                              request: sanic.request,
                              bus: VelbusProtocol
                              ) -> sanic.response.HTTPResponse:
+        if path_info != '':
+            return sanic.response.text('Not found', status=404)
+
         return sanic.response.json([
             call.as_dict()
             for call in self.delayed_calls
