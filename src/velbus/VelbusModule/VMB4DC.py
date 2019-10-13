@@ -1,7 +1,6 @@
 import dataclasses
 import typing
 
-import dateutil.parser
 import sanic.request
 import sanic.response
 
@@ -30,6 +29,15 @@ class NonNative(Exception):
 class DimStep(VelbusModule.DelayedCall):
     dimvalue: int = 0  # 0-100
     dimspeed: int = 0  # 0-65536 seconds
+
+    @classmethod
+    def from_any(cls, o: typing.Any):
+        if isinstance(o, dict):
+            return cls(**o)
+        elif isinstance(o, int):
+            return cls(dimvalue=o)
+        else:
+            raise TypeError(f"Couldn't understand object of type {type(o)}: {repr(o)}")
 
 
 @register(VMB4DC_MI)
@@ -174,37 +182,15 @@ class VMB4DCChannel(VelbusModuleChannel):
         if path_info != '':
             return sanic.response.text('Not found', status=404)
 
-        requested_status = request.json
+        try:
+            requested_status = DimStep.to_list(request.json)
+        except TypeError as e:
+            return sanic.response.text(f"Bad Request: {e}", 400)
 
-        if isinstance(requested_status, int):
-            requested_status = {
-                'dimvalue': requested_status
-            }
-
-        if isinstance(requested_status, dict):
-            requested_status = [
-                requested_status
-            ]
-
-        if isinstance(requested_status, list):
-            try:
-                requested_status = [
-                    DimStep(**s)
-                    for s in requested_status
-                ]
-            except (KeyError, ValueError, TypeError) as e:
-                return sanic.response.text(f"Bad Request: {e}", 400)
-
-            if len(requested_status) == 0:
-                return sanic.response.text("Bad request: empty list", 400)
-            if not allow_simulated_behaviour:
-                if len(requested_status) > 1:
-                    raise NonNative()
-                if requested_status[0].when is not None:
-                    raise NonNative()
-
-        else:
-            return sanic.response.text('Bad Request: could not parse PUT body', 400)
+        if len(requested_status) == 0:
+            return sanic.response.text("Bad request: empty list", 400)
+        if not allow_simulated_behaviour and not DimStep.is_trivial(requested_status):
+            raise NonNative()
 
         try:
             self.delayed_calls = requested_status
@@ -213,15 +199,9 @@ class VMB4DCChannel(VelbusModuleChannel):
 
         return sanic.response.text("OK", 202)
 
-    async def e_dimvalue_GET(self,
-                             path_info: str,
-                             request: sanic.request,
-                             bus: VelbusProtocol
-                             ) -> sanic.response.HTTPResponse:
-        if path_info != '':
-            return sanic.response.text('Not found', status=404)
-
-        return sanic.response.json([
-            call.as_dict()
-            for call in self.delayed_calls
-        ])
+    def e_dimvalue_GET(self,
+                       path_info: str,
+                       request: sanic.request,
+                       bus: VelbusProtocol
+                       ) -> sanic.response.HTTPResponse:
+        return self.delayed_calls_GET(path_info)

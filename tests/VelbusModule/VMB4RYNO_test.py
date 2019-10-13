@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from unittest.mock import patch, Mock
 
@@ -21,6 +23,9 @@ from velbus.VelbusModule.VMB4RYNO import VMB4RYNO as VMB4RYNO_mod
 from ..utils import make_awaitable
 
 
+_ = VMB4RYNO_mod  # load module to enable processing
+
+
 @pytest.fixture(params=[1, 2, 3, 4, 5])
 def subaddress(request):
     return request.param
@@ -28,6 +33,11 @@ def subaddress(request):
 
 @pytest.fixture(params=[1, 2, 3, 4, 5])
 def channel(request):
+    return request.param
+
+
+@pytest.fixture(params=[True, False])
+def true_false(request):
     return request.param
 
 
@@ -195,51 +205,66 @@ async def test_ws(generate_sanic_request, mock_velbus):
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures('vmb4ryno_11_http_api')
-async def test_put_relay_on(sanic_req, subaddress):
-    response = sanic.response.HTTPResponse(body='magic')
-    with \
-            patch('velbus.VelbusProtocol.VelbusProtocol.velbus_query',
-                  return_value=make_awaitable(None), autospec=True) as query, \
-            patch('velbus.VelbusModule.VMB4RYNO.VMB4RYNOChannel.relay_GET',
-                  return_value=make_awaitable(response), autospec=True):
-        sanic_req.method = 'PUT'
-        sanic_req.body = 'true'
-        resp = await HttpApi.module_req(sanic_req, '11', f"/{subaddress}/relay")
-        assert 200 == resp.status
-        assert 'magic' == resp.body.decode('utf-8')
-
-        query.assert_called_once()
-        assert VelbusFrame(
-                address=0x11,
+async def test_put_relay(generate_sanic_request, mock_velbus, module_address, channel, true_false):
+    mock_velbus.set_expected_conversation([
+        VMB4RYNO_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
                 message=SwitchRelay(
-                    command=SwitchRelay.Command.SwitchRelayOn,
-                    channel=subaddress,
-
+                    command=SwitchRelay.Command.SwitchRelayOn if true_false
+                    else SwitchRelay.Command.SwitchRelayOff,
+                    channel=Index(8)(channel),
                 ),
-            ) == query.call_args[0][1]
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=RelayStatus(
+                    channel=channel,
+                    relay_status=RelayStatus.RelayStatus.On if true_false
+                    else RelayStatus.RelayStatus.Off,
+                ),
+            ).to_bytes()
+        )
+    ])
+
+    sanic_req = generate_sanic_request(method='PUT', body=json.dumps(true_false))
+    resp = await HttpApi.module_req(sanic_req, f"{module_address:02x}", f"/{channel}/relay")
+    assert resp.status == 200
+    assert resp.body.decode('utf-8') == json.dumps(true_false)
+
+    await asyncio.sleep(0.05)  # allow time to process the queue
+    assert mock_velbus.assert_conversation_happened_exactly()
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures('vmb4ryno_11_http_api')
-async def test_put_relay_timer(sanic_req, subaddress):
-    response = sanic.response.HTTPResponse(body='magic')
-    with \
-            patch('velbus.VelbusProtocol.VelbusProtocol.velbus_query',
-                  return_value=make_awaitable(None), autospec=True) as query, \
-            patch('velbus.VelbusModule.VMB4RYNO.VMB4RYNOChannel.relay_GET',
-                  return_value=make_awaitable(response), autospec=True):
-        sanic_req.method = 'PUT'
-        sanic_req.body = '7'
-        resp = await HttpApi.module_req(sanic_req, '11', f"/{subaddress}/relay")
-        assert 200 == resp.status
-        assert 'magic' == resp.body.decode('utf-8')
+async def test_put_relay_timer(generate_sanic_request, mock_velbus, module_address, channel):
+    timer = 42
 
-        query.assert_called_once()
-        assert VelbusFrame(
-                address=0x11,
+    mock_velbus.set_expected_conversation([
+        VMB4RYNO_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
                 message=StartRelayTimer(
-                    channel=subaddress,
-                    delay_time=7,
+                    channel=channel,
+                    delay_time=timer,
                 ),
-            ) == query.call_args[0][1]
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=RelayStatus(
+                    channel=channel,
+                    relay_status=RelayStatus.RelayStatus.On,
+                ),
+            ).to_bytes()
+        )
+    ])
+
+    sanic_req = generate_sanic_request(method='PUT', body=str(timer))
+    resp = await HttpApi.module_req(sanic_req, f"{module_address:02x}", f"/{channel}/relay")
+    assert resp.status == 200
+    assert resp.body.decode('utf-8') == 'true'
+
+    await asyncio.sleep(0.05)  # allow time to process the queue
+    assert mock_velbus.assert_conversation_happened_exactly()

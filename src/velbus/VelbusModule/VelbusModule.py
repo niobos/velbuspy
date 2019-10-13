@@ -29,8 +29,11 @@ class DelayedCall:
     indicating that many seconds from now.
     """
     when: datetime.datetime = None
+    future: asyncio.Future = dataclasses.field(default=None, init=False, repr=False, hash=False)
 
     def __post_init__(self):
+        self.future = asyncio.get_event_loop().create_future()
+
         if isinstance(self.when, datetime.datetime):
             pass
         elif self.when is None:
@@ -45,21 +48,33 @@ class DelayedCall:
         if self.when is not None and self.when.tzinfo is None:
             self.when = self.when.replace(tzinfo=datetime.timezone.utc)
 
-    def seconds_from_now(self, reference: datetime.datetime = None):
+    @classmethod
+    def from_any(cls, o: typing.Any):
+        """
+        To override: convert basic types into cls()
+        """
+        return cls()
+
+    def seconds_from_now(self, now: datetime.datetime = None):
         if self.when is None:
             return 0
 
-        if reference is None:
-            reference = datetime.datetime.now(tz=datetime.timezone.utc)
-        if reference.tzinfo is None:
+        if now is None:
+            now = datetime.datetime.now(tz=datetime.timezone.utc)
+        if now.tzinfo is None:
             # assume UTC
-            reference = reference.replace(tzinfo=datetime.timezone.utc)
+            now = now.replace(tzinfo=datetime.timezone.utc)
 
-        delta = self.when - reference
+        delta = self.when - now
         return delta.total_seconds()
 
     def as_dict(self) -> dict:
-        ret = dataclasses.asdict(self)
+        ret = {}
+        fields = dataclasses.fields(self)
+        for field in fields:
+            if field.repr:
+                ret[field.name] = getattr(self, field.name)
+
         if self.when is None:
             ret['when'] = None
         else:
@@ -79,6 +94,27 @@ class DelayedCall:
         if other.when is None:
             return True  # None is always less than self
         return self.when > other.when
+
+    @classmethod
+    def to_list(cls, o: typing.Any) -> typing.List["DelayedCall"]:  # TODO
+        """
+        Upgrades a (list of) dicts to a list of `cls`
+        :raises TypeError if the conversion couldn't be done
+        """
+        if not isinstance(o, list):
+            o = [o]
+
+        ret = []
+        for step in o:
+            if isinstance(step, cls):
+                ret.append(step)
+            else:
+                ret.append(cls.from_any(step))  # may raise
+        return ret
+
+    @staticmethod
+    def is_trivial(steps: typing.List["DelayedCall"]) -> bool:
+        return len(steps) == 1 and steps[0].when is None
 
 
 class VelbusModule:
@@ -228,7 +264,10 @@ class VelbusModule:
             call_info = self._process_queue.pop(0)
             response = self.delayed_call(call_info)
             if inspect.isawaitable(response):
-                asyncio.ensure_future(response)
+                task = asyncio.get_event_loop().create_task(response)
+                task.add_done_callback(lambda result: call_info.future.set_result(result))
+            else:
+                call_info.future.set_result(response)
 
         self._schedule_next_delayed_call()
 
@@ -244,7 +283,7 @@ class VelbusModule:
         self._next_delayed_call = asyncio.get_event_loop().call_later(delay, self._delayed_call)
 
     @property
-    def delayed_calls(self) -> typing.Iterable[DelayedCall]:
+    def delayed_calls(self) -> typing.List[DelayedCall]:
         return self._process_queue
 
     @delayed_calls.setter
@@ -254,3 +293,14 @@ class VelbusModule:
             self._process_queue.add(call)
 
         self._schedule_next_delayed_call()
+
+    def delayed_calls_GET(self,
+                                path_info: str,
+                                ) -> sanic.response.HTTPResponse:
+        if path_info != '':
+            return sanic.response.text('Not found', status=404)
+
+        return sanic.response.json([
+            call.as_dict()
+            for call in self.delayed_calls
+        ])

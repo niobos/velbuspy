@@ -6,6 +6,8 @@ from unittest import mock
 
 import typing
 
+import freezegun
+import pytest
 from velbus.VelbusModule.VelbusModule import VelbusModule, DelayedCall
 
 
@@ -30,6 +32,24 @@ def test_datetime_delta():
     now_vs_utcnow = DelayedCall(datetime.datetime.utcnow()).seconds_from_now()
     assert now_vs_utcnow > -1
     assert now_vs_utcnow < 1
+
+
+@freezegun.freeze_time("2000-01-01 00:00:00")
+def test_delayedcall():
+    d = DelayedCall()
+    assert d.when is None
+
+    d = DelayedCall(when=0)
+    assert d.when == datetime.datetime(2000, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+
+    d = DelayedCall(when="2000-01-02 03:04:05 +02:00")
+    assert d.when == datetime.datetime(2000, 1, 2, 1, 4, 5, tzinfo=datetime.timezone.utc)
+
+    with pytest.raises(TypeError):
+        DelayedCall(when={})
+
+    with pytest.raises(TypeError):
+        DelayedCall(foo="bar")
 
 
 def test_delayed_calls():
