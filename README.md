@@ -20,12 +20,19 @@ Quickstart
 ----------
 
 1. Clone this repository
-2. Create a new Python [VirtualEnv] (optional, but highly recommended):
+
+   ```bash
+   git clone https://github.com/niobos/velbuspy.git
+   cd velbuspy
+   ```
+
+2. Create a new Python [VirtualEnv] (optional, but highly recommended) and make
+   sure you have current setuptools and wheels:
 
    ```bash
    $ python3 -m venv venv
    $ source venv/bin/activate
-   (venv) $
+   (venv) $ pip install setuptools wheel
    ```
 3. Install `structattr`:
 
@@ -33,7 +40,7 @@ Quickstart
    (venv) $ pip install git+https://github.com/niobos/structattr.git
    ```
 
-4. Install `velbuspi`:
+4. Install `velbuspy`:
 
    ```bash
    (venv) $ pip install -e .
