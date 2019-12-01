@@ -1,0 +1,14 @@
+[Unit]
+Description=VelbusPy
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+Environment=COMMAND_ARGS=/dev/ttys0
+EnvironmentFile=/etc/default/velbuspy
+ExecStart=/opt/velbuspy/venv/bin/python3 /opt/velbuspy/src/run.py $COMMAND_ARGS
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target
