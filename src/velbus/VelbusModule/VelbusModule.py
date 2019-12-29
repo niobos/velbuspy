@@ -295,8 +295,9 @@ class VelbusModule:
         self._schedule_next_delayed_call()
 
     def delayed_calls_GET(self,
-                                path_info: str,
-                                ) -> sanic.response.HTTPResponse:
+                          path_info: str,
+                          *args, **kwargs,
+                          ) -> sanic.response.HTTPResponse:
         if path_info != '':
             return sanic.response.text('Not found', status=404)
 

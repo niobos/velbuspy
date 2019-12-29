@@ -367,11 +367,13 @@ async def test_get_edimvalue(generate_sanic_request, mock_velbus, module_address
             ).to_bytes()
         ),
     ])
-
     resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/e_dimvalue")
     assert resp.status // 100 == 2
 
     sanic_req = generate_sanic_request()
+    resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/delayed_calls")
+    assert resp.status == 200
+
     resp = await HttpApi.module_req(sanic_req, f'{module_address:02x}', f"/{channel}/e_dimvalue")
     assert resp.status == 200
     resp = json.loads(resp.body)
