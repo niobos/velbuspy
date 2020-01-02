@@ -1,3 +1,5 @@
+import time
+
 import sanic.response
 
 from .VelbusModule import VelbusModule
@@ -18,7 +20,12 @@ class VMBGPOD(VelbusModule):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    # TODO: implement message() and cache
+    def message(self, vbm: VelbusFrame):
+        if isinstance(vbm.message, SensorTemperature):
+            self.state['temperature']['timestamp'] = time.time()
+            self.state['temperature']['value'] = vbm.message.current_temperature
+
+    # TODO: implement and cache
 
     async def temperature_GET(self, path_info, request, bus: VelbusProtocol):
         sensor_temp = await bus.velbus_query(
