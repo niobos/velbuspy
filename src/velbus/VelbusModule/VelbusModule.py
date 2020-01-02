@@ -142,7 +142,7 @@ class VelbusModule:
         self.address = address
 
         self._state = JsonPatchDict()
-        # state is synced via WebSockets to JavaScript clients
+        # state is synced to MQTT and via WebSockets to JavaScript clients
         # You can use it as a nested dict. Be aware that Javascript requires strings as keys!
         #
         # It is advisable to keep the structure of `state` and the

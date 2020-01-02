@@ -1,5 +1,6 @@
 import argparse
 import logging
+import re
 import signal
 import time
 import asyncio
@@ -18,6 +19,7 @@ from .VelbusMessage.InterfaceStatusRequest import InterfaceStatusRequest
 from .VelbusProtocol import VelbusProtocol, VelbusSerialProtocol, VelbusTcpProtocol, format_sockaddr
 from .CachedException import CachedTimeoutError
 from . import HttpApi
+from .mqtt import MqttStateSync
 
 from .VelbusMessage._registry import command_registry
 from .VelbusMessage.ModuleInfo._registry import module_type_registry
@@ -27,12 +29,17 @@ __import__('VelbusModule', globals(), level=1, fromlist=['*'])
 from .VelbusModule._registry import module_registry
 
 
-parser = argparse.ArgumentParser(description='Velbus communication daemon')
+parser = argparse.ArgumentParser(
+    description='Velbus communication daemon',
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+)
 parser.add_argument('--tcp-port', help="TCP port to listen on", type=int, default=8445)
 parser.add_argument('--static-dir', help="Directory to serve under /static the API", type=str,
                     default='{}/static'.format(os.path.dirname(__file__)))
 parser.add_argument('--logfile', help="Log to the given file", type=str)
 parser.add_argument('--debug', help="Enable debug mode", action='store_true')
+parser.add_argument('--mqtt', type=str, default=None, action='append',
+                    help="MQTT URL & topic prefix to connect to (0 or more). e.g. mqtt://localhost/bus/velbus")
 parser.add_argument('serial_port', help="Serial port to open")
 
 args = parser.parse_args()
@@ -121,6 +128,18 @@ tcpserver = loop.run_until_complete(
 logger.info("Listening for TCP on {}".format(
     format_sockaddr(tcpserver.sockets[0].getsockname())))
 
+if args.mqtt is None:
+    args.mqtt = []
+for uri in args.mqtt:
+    match = re.fullmatch("(?P<proto>[a-z]+)://(?P<host>[^/]+)(?P<topic>/.*)", uri)
+    if not match:
+        raise ValueError(f"Invalid MQTT URI `{uri}`")
+    mqtt_uri = f"{match.group('proto')}://{match.group('host')}"
+    mqtt_topic = match.group('topic')[1:]
+    sync = MqttStateSync(mqtt_uri=mqtt_uri, mqtt_topic_prefix=mqtt_topic)
+    asyncio.get_event_loop().run_until_complete(sync.connect())  # may raise
+    logger.info(f"Connected to MQTT {mqtt_uri}, topic prefix {mqtt_topic}")
+    HttpApi.mqtt_sync_clients.add(sync)
 
 # Start up Web server
 app = Sanic(__name__, log_config={})

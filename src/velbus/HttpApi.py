@@ -44,10 +44,12 @@ from typing import Dict, Awaitable, Callable, Union
 import re
 import sanic.response
 import sanic.request
+import typing
 import websockets
 
 from .CachedException import CachedTimeoutError
 from .JsonPatchDict import JsonPatchOperation, JsonPatch
+from .mqtt import MqttStateSync
 from .VelbusProtocol import VelbusProtocol, VelbusHttpProtocol, format_sockaddr
 
 from .VelbusMessage.VelbusFrame import VelbusFrame
@@ -64,6 +66,8 @@ ws_clients = set()
 
 sanic_request = contextvars.ContextVar('sanic_request')
 sanic_request_datetime = contextvars.ContextVar('sanic_request_datetime')
+
+mqtt_sync_clients: typing.Set[MqttStateSync] = set()
 
 
 def timestamp(request: sanic.request) -> sanic.response:
@@ -277,6 +281,10 @@ def gen_update_state_cb(address) -> Callable:
     def update_state_cb(ops: JsonPatch):
         prefixed_ops = ops.prefixed(['{:02x}'.format(address)])
         json_patch = json.dumps(prefixed_ops.to_json_able())
+
+        for op in prefixed_ops:
+            for mqtt in mqtt_sync_clients:
+                asyncio.get_event_loop().create_task(mqtt.publish(op))
 
         for ws in ws_clients:
             if address in ws.subscribed_modules:

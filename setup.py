@@ -17,6 +17,7 @@ setup(
         'structattr',
         'sortedcontainers',
         'python-dateutil ',
+        'hbmqtt',
     ],
     setup_requires=[
         'pytest-runner'

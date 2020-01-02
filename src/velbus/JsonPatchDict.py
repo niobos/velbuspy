@@ -40,6 +40,23 @@ class JsonPatchOperation:
         path = re.sub(r'~0', '~', path)
         return path
 
+    def decompose(self) -> typing.Generator["JsonPatchOperation", None, None]:
+        """
+        Decompose into simple-value assignments
+        """
+        if self.op == JsonPatchOperation.Operation.remove:
+            yield [self]
+            return
+        # else:  add/replace
+
+        if isinstance(self.value, dict):
+            for k, v in self.value.items():
+                sub_op = JsonPatchOperation(self.op, [*self.path, k], v)
+                for sub_sub_op in sub_op.decompose():
+                    yield sub_sub_op
+        else:
+            yield self
+
 
 class JsonPatch(list):
     def to_json_able(self):
