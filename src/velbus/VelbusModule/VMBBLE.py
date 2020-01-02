@@ -32,7 +32,6 @@ class VMBBLE(NestedAddressVelbusModule):
                  bus: VelbusProtocol,
                  address: int,
                  module_info: ModuleInfo = None,
-                 update_state_cb: Callable = lambda ops: None
                  ):
         if isinstance(module_info, VMB2BLE_MI):
             channels = [1, 2]
@@ -45,7 +44,6 @@ class VMBBLE(NestedAddressVelbusModule):
             bus=bus,
             address=address,
             module_info=module_info,
-            update_state_cb=update_state_cb,
             channels=channels, channel_type=VMBBLEChannel,
         )
 

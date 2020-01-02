@@ -21,12 +21,10 @@ class NestedAddressVelbusModule(VelbusModule):
             module_info: ModuleInfo,
             channels: Iterable[Any],
             channel_type: type,
-            update_state_cb: Callable = lambda op, path, value: None,
             ):
         super().__init__(bus=bus,
                          address=address,
-                         module_info=module_info,
-                         update_state_cb=update_state_cb)
+                         module_info=module_info)
 
         self.submodules = {}
         for channel in channels:
@@ -34,7 +32,6 @@ class NestedAddressVelbusModule(VelbusModule):
                 bus=bus,
                 channel=channel,
                 parent_module=self,
-                update_state_cb=lambda ops: None,  # noop
             )
             self.submodules[channel]._state = self.state[channel]
 
@@ -146,12 +143,10 @@ class VelbusModuleChannel(VelbusModule):
                  bus: VelbusProtocol,
                  channel: int,
                  parent_module: VelbusModule,
-                 update_state_cb: Callable = lambda ops: None,
                  ):
         super().__init__(
             bus=bus,
             address=parent_module.address,
-            update_state_cb=update_state_cb,
         )
         self.channel = channel
         self.parent = weakref.proxy(parent_module)  # avoid circular dependencies

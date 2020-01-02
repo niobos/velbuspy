@@ -47,11 +47,10 @@ def vmb4ryno_11_http_api(request):
     HttpApi.modules.clear()
     HttpApi.ws_clients.clear()
 
+    mod = VMB4RYNO_mod(bus=None, address=0x11, module_info=VMB4RYNO_mi())
+    mod.state_callback.add(HttpApi.gen_update_state_cb(0x11))
     HttpApi.modules[0x11] = asyncio.get_event_loop().create_future()
-    HttpApi.modules[0x11].set_result(
-        VMB4RYNO_mod(bus=None, address=0x11, module_info=VMB4RYNO_mi(),
-                     update_state_cb=HttpApi.gen_update_state_cb(0x11))
-    )
+    HttpApi.modules[0x11].set_result(mod)
 
     yield
     # leave dirty

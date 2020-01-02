@@ -58,14 +58,12 @@ class VMB4DC(NestedAddressVelbusModule):
                  bus: VelbusProtocol,
                  address: int,
                  module_info: ModuleInfo = None,
-                 update_state_cb: typing.Callable = lambda ops: None
                  ):
         super().__init__(
             bus=bus,
             address=address,
             module_info=module_info,
             channels=[1, 2, 3, 4], channel_type=VMB4DCChannel,
-            update_state_cb=update_state_cb,
         )
 
 
@@ -75,13 +73,11 @@ class VMB4DCChannel(VelbusModuleChannel):
                  bus: VelbusProtocol,
                  channel: int,
                  parent_module: VMB4DC,
-                 update_state_cb: typing.Callable = lambda ops: None,
                  ):
         super().__init__(
             bus=bus,
             channel=channel,
             parent_module=parent_module,
-            update_state_cb=update_state_cb,
         )
 
     def message(self, vbm: VelbusFrame):

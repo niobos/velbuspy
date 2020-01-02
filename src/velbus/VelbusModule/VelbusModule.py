@@ -121,8 +121,7 @@ class VelbusModule:
     def __init__(self,
                  bus: VelbusProtocol,
                  address: int,
-                 module_info: ModuleInfo = None,
-                 update_state_cb: Callable = lambda ops: None):
+                 module_info: ModuleInfo = None):
         """
         Initialize module handling for the given address
 
@@ -143,7 +142,6 @@ class VelbusModule:
         self.address = address
 
         self._state = JsonPatchDict()
-        self._state.callback.add(update_state_cb)
         # state is synced via WebSockets to JavaScript clients
         # You can use it as a nested dict. Be aware that Javascript requires strings as keys!
         #
@@ -160,6 +158,10 @@ class VelbusModule:
     @state.setter
     def state(self, value) -> None:
         self._state.replace(value)
+
+    @property
+    def state_callback(self) -> typing.Set:
+        return self._state.callback
 
     def message(self, vbm: VelbusFrame) -> None:
         """

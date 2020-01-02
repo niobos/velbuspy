@@ -42,7 +42,6 @@ class VMB2BL(NestedAddressVelbusModule):
                  bus: VelbusProtocol,
                  address: int,
                  module_info: ModuleInfo = None,
-                 update_state_cb: typing.Callable = lambda ops: None
                  ):
         self.module_info = module_info  # Save module_info to extract timeout settings
         # NOTE: save module_info before calling super()
@@ -50,7 +49,6 @@ class VMB2BL(NestedAddressVelbusModule):
             bus=bus,
             address=address,
             module_info=module_info,
-            update_state_cb=update_state_cb,
             channels=[1, 2], channel_type=VMBBLChannel,
         )
 
@@ -69,14 +67,12 @@ class VMBBLChannel(VelbusModuleChannel):
                  bus: VelbusProtocol,
                  channel: int,
                  parent_module: VMB2BL,
-                 update_state_cb: typing.Callable = lambda ops: None,
                  ):
 
         super().__init__(
             bus=bus,
             channel=channel,
             parent_module=parent_module,
-            update_state_cb=update_state_cb,
         )
         if channel == 1:
             self.timeout = BlindTimeout.to_secs(parent_module.module_info.timeout_blind1)

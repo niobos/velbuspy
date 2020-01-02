@@ -305,10 +305,11 @@ async def get_module_fresh(bus: VelbusProtocol, address: int) -> VelbusModule:
 
         for c in candidates:
             try:
-                return c(bus=bus,
+                mod = c(bus=bus,
                          address=address,
-                         module_info=module_type.message.module_info,
-                         update_state_cb=gen_update_state_cb(address))
+                         module_info=module_type.message.module_info)
+                mod.state_callback.add(gen_update_state_cb(address))
+                return mod
             except ValueError:
                 pass
 
