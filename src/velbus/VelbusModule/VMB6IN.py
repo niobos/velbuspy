@@ -30,13 +30,11 @@ class VMB6IN(NestedAddressVelbusModule):
                  bus: VelbusProtocol,
                  address: int,
                  module_info: ModuleInfo = None,
-                 update_state_cb: Callable = lambda ops: None
                  ):
         super().__init__(
             bus=bus,
             address=address,
             module_info=module_info,
-            update_state_cb=update_state_cb,
             channels=[1, 2, 3, 4, 5, 6], channel_type=VMB6INChannel,
         )
 
