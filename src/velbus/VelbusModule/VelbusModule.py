@@ -4,6 +4,7 @@ import datetime
 import functools
 import inspect
 import re
+import json
 import typing
 from typing import Callable, Union, Awaitable
 
@@ -271,6 +272,7 @@ class VelbusModule:
             else:
                 call_info.future.set_result(response)
 
+        self.delayed_calls_update_state()
         self._schedule_next_delayed_call()
 
     def _schedule_next_delayed_call(self) -> None:
@@ -284,6 +286,12 @@ class VelbusModule:
         delay = self._process_queue[0].seconds_from_now()
         self._next_delayed_call = asyncio.get_event_loop().call_later(delay, self._delayed_call)
 
+    def delayed_calls_update_state(self):
+        self.state['delayed_calls'] = json.dumps([
+            call.as_dict()
+            for call in self.delayed_calls
+        ])
+
     @property
     def delayed_calls(self) -> typing.List[DelayedCall]:
         return self._process_queue
@@ -295,6 +303,7 @@ class VelbusModule:
             self._process_queue.add(call)
 
         self._schedule_next_delayed_call()
+        self.delayed_calls_update_state()
 
     def delayed_calls_GET(self,
                           path_info: str,
