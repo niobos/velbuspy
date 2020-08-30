@@ -2,6 +2,7 @@ import time
 
 import sanic.response
 
+from ..utils import cache_control_max_age
 from .VelbusModule import VelbusModule
 from ._registry import register
 from ..VelbusMessage.ModuleInfo.VMBGPOD import VMBGPOD as VMBGPOD_mi
@@ -25,20 +26,43 @@ class VMBGPOD(VelbusModule):
             self.state['temperature']['timestamp'] = time.time()
             self.state['temperature']['value'] = vbm.message.current_temperature
 
-    # TODO: implement and cache
+    async def _get_sensor_temperature(
+            self,
+            bus: VelbusProtocol,
+            max_age: int = None,
+    ):
+        if max_age is None:
+            max_age = 60
+
+        now = time.time()
+        min_timestap = now - max_age
+        if self.state.get('temperature', {'timestamp': 0})['timestamp'] < min_timestap:
+            await bus.velbus_query(
+                VelbusFrame(
+                    address=self.address,
+                    message=SensorTemperatureRequest(),
+                ),
+                SensorTemperature,
+            )
+            # do await, but don't actually use the value
+            # by the time we get here, message() will have populated the cache
+
+        return self.state
 
     async def temperature_GET(self, path_info, request, bus: VelbusProtocol):
-        sensor_temp = await bus.velbus_query(
-            VelbusFrame(
-                address=self.address,
-                message=SensorTemperatureRequest(),
-            ),
-            SensorTemperature,
+        max_age = cache_control_max_age(request)
+        status = await self._get_sensor_temperature(bus=bus, max_age=max_age)
+        age = int(time.time() - status['temperature']['timestamp'])
+
+        return sanic.response.json(
+            status['temperature']['value'],
+            headers={
+                'Age': age,
+            }
         )
 
-        return sanic.response.json(sensor_temp.message.current_temperature)
-
     async def set_temperature_GET(self, path_info, request, bus: VelbusProtocol):
+        # TODO: implement cache
         sensor_status = await bus.velbus_query(
             VelbusFrame(
                 address=self.address,
