@@ -12,6 +12,7 @@ from ..VelbusMessage.SensorTemperatureRequest import SensorTemperatureRequest
 from ..VelbusMessage.SensorTemperature import SensorTemperature
 from ..VelbusMessage.ModuleStatusRequest import ModuleStatusRequest
 from ..VelbusMessage.TemperatureSensorStatus import TemperatureSensorStatus
+from ..VelbusMessage.PushButtonStatus import PushButtonStatus
 
 from ..VelbusProtocol import VelbusProtocol
 
@@ -25,6 +26,20 @@ class VMBGPOD(VelbusModule):
         if isinstance(vbm.message, SensorTemperature):
             self.state['temperature']['timestamp'] = time.time()
             self.state['temperature']['value'] = vbm.message.current_temperature
+
+        elif isinstance(vbm.message, PushButtonStatus):
+            pb = {_: None for _ in range(8)}
+
+            for i in range(8):
+                # Velbus numbers from right to left
+                if vbm.message.just_pressed[i]:
+                    pb[str(8-i)] = True
+                if vbm.message.long_pressed[i]:
+                    pb[str(8-i)] = 'long'
+                if vbm.message.just_released[i]:
+                    pb[str(8-i)] = False
+
+            self.state['pushbutton'] = pb
 
     async def _get_sensor_temperature(
             self,
