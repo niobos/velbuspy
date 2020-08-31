@@ -39,6 +39,7 @@ import json
 import logging
 import datetime
 import asyncio
+import traceback
 from typing import Dict, Awaitable, Callable, Union
 
 import re
@@ -68,6 +69,8 @@ sanic_request = contextvars.ContextVar('sanic_request')
 sanic_request_datetime = contextvars.ContextVar('sanic_request_datetime')
 
 mqtt_sync_clients: typing.Set[MqttStateSync] = set()
+
+logger = logging.getLogger(__name__)
 
 
 def timestamp(request: sanic.request) -> sanic.response:
@@ -120,8 +123,6 @@ async def module_req(request: sanic.request, address: str, module_path: str) -> 
 
 
 async def module_state_ws(request: sanic.request, ws: websockets.protocol.WebSocketCommonProtocol):
-    logger = logging.getLogger(__name__)
-
     client_id = format_sockaddr(ws.remote_address)
     logger.info("{p} : new WebSocket connection ({ua})".format(
         p=client_id,
@@ -145,6 +146,12 @@ async def module_state_ws(request: sanic.request, ws: websockets.protocol.WebSoc
         logger.info("{p} : WebSocket connection closed".format(
             p=client_id
         ))
+    except Exception as e:
+        logger.error("{p} : uncaught exception: {e}".format(
+            p=client_id,
+            e=repr(e),
+        ))
+        logger.error(traceback.format_exc())
     finally:
         ws_clients.remove(ws)
 
@@ -271,6 +278,9 @@ def get_module(bus: VelbusProtocol, address: int) -> Awaitable[VelbusModule]:
     :param address: address to create object for
     :return: A future resulting in the VelbusModule object of the correct type
     """
+    if address in modules:
+        if modules[address].cancelled():
+            del modules[address]
     if address not in modules:
         modules[address] = asyncio.ensure_future(get_module_fresh(bus, address))
 
