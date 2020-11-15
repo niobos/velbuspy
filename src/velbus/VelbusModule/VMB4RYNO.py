@@ -64,14 +64,20 @@ class VMB4RYNOChannel(VelbusModuleChannel):
     VMB4RYNO channel
 
     state = {
-        'relay': False
+        'relay': False,
                  # Current relay state
                  # either a boolean (On = True, Off = False, obviously)
                  # or an float representing the (fractional) Unix timestamp (UTC)
                  # on which the timer will expire.
+        'last_change': 1600000000.
+                       # float representing the (fractional) Unix timestamp (UTC)
+                       # of the last change in `relay`.
+                       # null or absent if not known.
     }
     """
     def message(self, vbm: VelbusFrame):
+        previous_state = self.state.get('relay')
+
         if isinstance(vbm.message, RelayStatus):
             relay_status = vbm.message
 
@@ -95,6 +101,9 @@ class VMB4RYNOChannel(VelbusModuleChannel):
 
             if push_button_status.just_released[8-self.channel]:
                 self.state['relay'] = False
+
+        if previous_state is not None and self.state['relay'] != previous_state:
+            self.state['last_change'] = datetime.datetime.now().timestamp()
 
     async def _get_relay_state(self, bus: VelbusProtocol):
         if 'relay' not in self.state:
@@ -220,3 +229,18 @@ class VMB4RYNOChannel(VelbusModuleChannel):
         )
 
         return relay_step.status
+
+    async def last_change_GET(self,
+                        path_info: str,
+                        request: sanic.request,
+                        bus: VelbusProtocol
+                        ) -> sanic.response.HTTPResponse:
+        """
+        Returns the time of last change
+        """
+        del request  # unused
+
+        if path_info != '':
+            return sanic.response.text('Not found', status=404)
+
+        return sanic.response.json(self.state.get('last_change'))

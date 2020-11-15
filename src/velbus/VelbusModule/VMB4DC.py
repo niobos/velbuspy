@@ -1,4 +1,5 @@
 import dataclasses
+import datetime
 import typing
 
 import sanic.request
@@ -81,6 +82,8 @@ class VMB4DCChannel(VelbusModuleChannel):
         )
 
     def message(self, vbm: VelbusFrame):
+        previous_dimvalue = self.state.get('dimvalue')
+
         if isinstance(vbm.message, DimmercontrollerStatus):
             dimmer_status = vbm.message
 
@@ -91,6 +94,9 @@ class VMB4DCChannel(VelbusModuleChannel):
                     # 'led_status': relay_status.led_status,
                     # 'timeout': datetime.datetime.now() + datetime.timedelta(seconds=dimmer_status.delay_time)
                 }
+
+        if previous_dimvalue is not None and previous_dimvalue != self.state['dimvalue']:
+            self.state['last_change'] = datetime.datetime.now().timestamp()
 
     async def _get_status(self, bus: VelbusProtocol):
         if "dimvalue" not in self.state:
@@ -201,3 +207,18 @@ class VMB4DCChannel(VelbusModuleChannel):
                        bus: VelbusProtocol
                        ) -> sanic.response.HTTPResponse:
         return self.delayed_calls_GET(path_info)
+
+    async def last_change_GET(self,
+                              path_info: str,
+                              request: sanic.request,
+                              bus: VelbusProtocol
+                              ) -> sanic.response.HTTPResponse:
+        """
+        Returns the time of last change
+        """
+        del request  # unused
+
+        if path_info != '':
+            return sanic.response.text('Not found', status=404)
+
+        return sanic.response.json(self.state.get('last_change'))

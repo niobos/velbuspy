@@ -1,14 +1,16 @@
+import datetime
 import json
 
+import freezegun
 import pytest
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, call
 
 import asyncio
 import sanic.response
 
 from velbus import HttpApi
 from velbus.VelbusProtocol import VelbusHttpProtocol
-from velbus.VelbusMessage._types import Index
+from velbus.VelbusMessage._types import Index, Bitmap
 from velbus.VelbusMessage.VelbusFrame import VelbusFrame
 from velbus.VelbusMessage.ModuleTypeRequest import ModuleTypeRequest
 from velbus.VelbusMessage.ModuleType import ModuleType
@@ -17,6 +19,7 @@ from velbus.VelbusMessage.ModuleStatusRequest import ModuleStatusRequest
 from velbus.VelbusMessage.RelayStatus import RelayStatus
 from velbus.VelbusMessage.SwitchRelay import SwitchRelay
 from velbus.VelbusMessage.StartRelayTimer import StartRelayTimer
+from velbus.VelbusMessage.PushButtonStatus import PushButtonStatus
 
 from velbus.VelbusModule.VMB4RYNO import VMB4RYNO as VMB4RYNO_mod
 
@@ -149,7 +152,6 @@ async def test_get_relay(generate_sanic_request, mock_velbus, module_address, ch
 async def test_ws(generate_sanic_request, mock_velbus):
     module_address = 0x11  # TODO: check for "all" addresses
     channel = 4  # TODO: check all channels
-
     mock_velbus.set_expected_conversation([
         VMB4RYNO_module_info_exchange(module_address),
         (
@@ -188,19 +190,30 @@ async def test_ws(generate_sanic_request, mock_velbus):
                                     '}}]')
     ws.send.reset_mock()
 
-    HttpApi.message(VelbusFrame(address=module_address, message=RelayStatus(
-        channel=channel,
-        relay_status=RelayStatus.RelayStatus.On,
-    )))
-    ws.send.assert_called_once_with('[{"op": "add", "path": "/11/4/relay", "value": true}]')
-    ws.send.reset_mock()
+    with freezegun.freeze_time("2000-01-01 00:00:00") as frozen_datetime:
+        now = datetime.datetime.now().timestamp()
 
-    HttpApi.message(VelbusFrame(address=module_address, message=RelayStatus(
-        channel=channel,
-        relay_status=RelayStatus.RelayStatus.Off,
-    )))
-    ws.send.assert_called_once_with('[{"op": "add", "path": "/11/4/relay", "value": false}]')
-    ws.send.reset_mock()
+        HttpApi.message(VelbusFrame(address=module_address, message=RelayStatus(
+            channel=channel,
+            relay_status=RelayStatus.RelayStatus.On,
+        )))
+        ws.send.assert_has_calls([
+            call('[{"op": "add", "path": "/11/4/relay", "value": true}]'),
+            call('[{"op": "add", "path": "/11/4/last_change", "value": ' + str(now) + '}]'),
+        ])
+        ws.send.reset_mock()
+
+        frozen_datetime.tick(datetime.timedelta(seconds=10))
+        now = datetime.datetime.now().timestamp()
+        HttpApi.message(VelbusFrame(address=module_address, message=RelayStatus(
+            channel=channel,
+            relay_status=RelayStatus.RelayStatus.Off,
+        )))
+        ws.send.assert_has_calls([
+            call('[{"op": "add", "path": "/11/4/relay", "value": false}]'),
+            call('[{"op": "add", "path": "/11/4/last_change", "value": ' + str(now) + '}]'),
+        ])
+        ws.send.reset_mock()
 
 
 @pytest.mark.asyncio
@@ -267,3 +280,48 @@ async def test_put_relay_timer(generate_sanic_request, mock_velbus, module_addre
 
     await asyncio.sleep(0.05)  # allow time to process the queue
     assert mock_velbus.assert_conversation_happened_exactly()
+
+
+@pytest.mark.asyncio
+async def test_last_change(generate_sanic_request, mock_velbus, module_address, channel):
+    mock_velbus.set_expected_conversation([
+        VMB4RYNO_module_info_exchange(module_address),
+        (
+            VelbusFrame(
+                address=module_address,
+                message=ModuleStatusRequest(
+                    channel=Index(8)(channel).to_int(),
+                ),
+            ).to_bytes(),
+            VelbusFrame(
+                address=module_address,
+                message=RelayStatus(
+                    channel=channel,
+                    relay_status=RelayStatus.RelayStatus.On,
+                ),
+            ).to_bytes()
+        )
+    ])
+
+    sanic_req = generate_sanic_request()
+    resp = await HttpApi.module_req(sanic_req, f"{module_address:02x}", f"/{channel}/relay")
+    assert resp.status == 200
+    assert resp.body.decode('utf-8') == 'true'
+
+    resp = await HttpApi.module_req(sanic_req, f"{module_address:02x}", f"/{channel}/last_change")
+    assert resp.status == 200
+    assert resp.body.decode('utf-8') == 'null'
+
+    with freezegun.freeze_time("2000-01-01 00:00:00") as frozen_datetime:
+        now = datetime.datetime.now().timestamp()
+
+        HttpApi.message(VelbusFrame(
+            address=module_address,
+            message=PushButtonStatus(
+                just_released=Bitmap(8).from_int(1 << (channel-1)),
+            )
+        ))
+
+        resp = await HttpApi.module_req(sanic_req, f"{module_address:02x}", f"/{channel}/last_change")
+        assert resp.status == 200
+        assert resp.body.decode('utf-8') == str(now)
