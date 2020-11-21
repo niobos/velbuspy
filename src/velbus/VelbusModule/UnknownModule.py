@@ -7,7 +7,6 @@ class UnknownModule(VelbusModule):
     def __init__(self, bus, address, update_state_cb, module_info):
         super().__init__(bus=bus,
                          address=address,
-                         update_state_cb=update_state_cb,
                          module_info=module_info)
         self.module_type = module_info.__class__.__name__
 
