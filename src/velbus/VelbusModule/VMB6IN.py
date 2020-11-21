@@ -1,3 +1,4 @@
+import datetime
 from typing import Callable
 
 import sanic.request
@@ -41,6 +42,8 @@ class VMB6IN(NestedAddressVelbusModule):
 
 class VMB6INChannel(VelbusModuleChannel):
     def message(self, vbm: VelbusFrame):
+        previous_state = self.state.get('input')
+
         if isinstance(vbm.message, ModuleStatus6IN):
             self.state['input'] = vbm.message.input_status[8-self.channel]  # inputs are ordered LSb -> MSb
 
@@ -52,6 +55,9 @@ class VMB6INChannel(VelbusModuleChannel):
 
             if push_button_status.just_released[8-self.channel]:
                 self.state['input'] = False
+
+        if previous_state is not None and self.state['input'] != previous_state:
+            self.state['last_change'] = datetime.datetime.now().timestamp()
 
     async def _get_input_state(self, bus: VelbusProtocol):
         if 'input' not in self.state:
@@ -87,3 +93,18 @@ class VMB6INChannel(VelbusModuleChannel):
         status = await self._get_input_state(bus)
 
         return sanic.response.json(status['input'])
+
+    async def last_change_GET(self,
+                              path_info: str,
+                              request: sanic.request,
+                              bus: VelbusProtocol
+                              ) -> sanic.response.HTTPResponse:
+        """
+        Returns the time of last change
+        """
+        del request  # unused
+
+        if path_info != '':
+            return sanic.response.text('Not found', status=404)
+
+        return sanic.response.json(self.state.get('last_change'))
