@@ -102,7 +102,8 @@ class VMB4RYNOChannel(VelbusModuleChannel):
             if push_button_status.just_released[8-self.channel]:
                 self.state['relay'] = False
 
-        if previous_state is not None and self.state['relay'] != previous_state:
+        if previous_state is not None and bool(self.state['relay']) != bool(previous_state):
+            # Convert state to bool, so a change from True to a timout is not considered a change
             self.state['last_change'] = datetime.datetime.now().timestamp()
 
     async def _get_relay_state(self, bus: VelbusProtocol):
