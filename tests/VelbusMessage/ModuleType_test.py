@@ -6,6 +6,7 @@ from velbus.VelbusMessage.ModuleType import ModuleType
 from velbus.VelbusMessage.ModuleInfo.UnknownModuleInfo import UnknownModuleInfo
 from velbus.VelbusMessage.ModuleInfo.VMB4RYNO import VMB4RYNO
 from velbus.VelbusMessage.ModuleInfo.VMBGPOD import VMBGPOD
+from velbus.VelbusMessage.ModuleInfo.VMBDALI import VMBDALI
 from velbus.VelbusMessage._types import BlindTimeout
 
 
@@ -54,6 +55,21 @@ def test_decode_VMB2BL():
             timeout_blind1=BlindTimeout.t30sec,
             timeout_blind2=BlindTimeout.t30sec,
             build_year=8, build_week=21,
+        ))
+
+    assert json.dumps(a.to_json_able())
+
+
+def test_decode_VMBDALI():
+    b = b'\x0f\xfb\xda\x08\xff\x45\x12\x34\x01\x21\x14\x00\x54\x04'
+    a = VelbusFrame.from_bytes(b)
+    assert a.to_bytes() == b
+
+    assert a.message == ModuleType(
+        module_info=VMBDALI(
+            serial=0x1234,
+            memory_map_version=1,
+            build_year=33, build_week=20,
         ))
 
     assert json.dumps(a.to_json_able())
