@@ -145,7 +145,7 @@ async def test_get_relay(generate_sanic_request, mock_velbus, module_address, ch
     resp = await HttpApi.module_req(sanic_req, f"{module_address:02x}", f"/{channel}/relay")
     assert 200 == resp.status
     assert 'true' == resp.body.decode('utf-8')
-    assert mock_velbus.assert_conversation_happened_exactly()
+    mock_velbus.assert_conversation_happened_exactly()
 
 
 @pytest.mark.asyncio
@@ -246,7 +246,7 @@ async def test_put_relay(generate_sanic_request, mock_velbus, module_address, ch
     assert resp.body.decode('utf-8') == json.dumps(true_false)
 
     await asyncio.sleep(0.05)  # allow time to process the queue
-    assert mock_velbus.assert_conversation_happened_exactly()
+    mock_velbus.assert_conversation_happened_exactly()
 
 
 @pytest.mark.asyncio
@@ -279,7 +279,7 @@ async def test_put_relay_timer(generate_sanic_request, mock_velbus, module_addre
     assert resp.body.decode('utf-8') == 'true'
 
     await asyncio.sleep(0.05)  # allow time to process the queue
-    assert mock_velbus.assert_conversation_happened_exactly()
+    mock_velbus.assert_conversation_happened_exactly()
 
 
 @pytest.mark.asyncio

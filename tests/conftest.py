@@ -6,6 +6,7 @@ import random
 import typing
 import inspect
 import weakref
+import logging
 
 import attr
 import pytest
@@ -157,12 +158,18 @@ def mock_velbus(request):
 
             self.conversation_to_happen = conversation
 
-        def assert_conversation_happened(self) -> bool:
+        def did_conversation_happened(self) -> bool:
             return len(self.conversation_to_happen) == 0
 
-        def assert_conversation_happened_exactly(self) -> bool:
-            return self.assert_conversation_happened() \
+        def did_conversation_happened_exactly(self) -> bool:
+            return self.did_conversation_happened() \
                    and len(self.unexpected_messages) == 0
+
+        def assert_conversation_happened(self) -> None:
+            assert self.did_conversation_happened()
+
+        def assert_conversation_happened_exactly(self) -> None:
+            assert self.did_conversation_happened_exactly()
 
     VelbusProtocol.serial_client = FakeSerialProtocol()
     VelbusProtocol.serial_client.connection_made(FakeTransport(VelbusProtocol.serial_client))
@@ -274,3 +281,17 @@ def fake_asyncio_sleep(mocker):
     mocker.patch('asyncio.sleep', new=FakeSleep)
     yield FakeSleep
     mocker.stopall()
+
+
+@pytest.fixture()
+def debug_logging(request):
+    logging.getLogger(None).setLevel(logging.DEBUG)
+    log_file_handler = logging.StreamHandler()
+    log_file_handler.setFormatter(logging.Formatter(
+        fmt="%(asctime)sZ [%(name)s %(levelname)s] %(message)s"
+    ))
+    logging.getLogger(None).addHandler(log_file_handler)
+
+    yield logging.getLogger(request.node.name)
+
+    logging.getLogger(None).removeHandler(log_file_handler)

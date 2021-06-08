@@ -142,12 +142,18 @@ class VMB4DCChannel(VelbusModuleChannel):
         Set the dim value
         """
         try:
-            return await self.e_dimvalue_PUT(
+            resp = await self.e_dimvalue_PUT(
                 path_info=path_info,
                 request=request,
                 bus=bus,
                 allow_simulated_behaviour=False,
             )
+
+            if resp.status == 202:
+                # make this HTTP request synchroneous
+                await self.delayed_calls[0].future
+                resp.status = 200
+            return resp
         except NonNative:
             return sanic.response.text('Bad Request: non-native request on native endpoint', 400)
 

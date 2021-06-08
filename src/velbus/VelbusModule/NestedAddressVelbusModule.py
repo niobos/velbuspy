@@ -123,8 +123,9 @@ class NestedAddressVelbusModule(VelbusModule):
             module_path[1] = '/' + module_path[1]
 
         try:
-            return self.submodules[subaddress].lookup_method(
-                module_path[0], request.method)(
+            method = self.submodules[subaddress].lookup_method(
+                module_path[0], request.method)
+            return method(
                     path_info=module_path[1],
                     request=request,
                     bus=bus,

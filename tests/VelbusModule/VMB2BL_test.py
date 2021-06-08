@@ -57,21 +57,6 @@ async def test_VMB2BL_status_position_estimation(generate_sanic_request, mock_ve
                 ),
             ).to_bytes()
         ),
-        (
-            VelbusFrame(
-                address=0x11,
-                message=ModuleStatusRequest(
-                    channel=1
-                )
-            ).to_bytes(),
-            VelbusFrame(
-                address=0x11,
-                message=BlindStatusV1(
-                    channel=BlindNumber(1),
-                    blind_status=BlindStatusV1.BlindStatus.Off,
-                ),
-            ).to_bytes()
-        ),
     ])
 
     with freeze_time() as frozen_datetime:

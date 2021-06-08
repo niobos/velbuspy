@@ -10,7 +10,7 @@ setup(
     python_requires=">=3.7",
     install_requires=[
         'pyserial-asyncio',
-        'websockets',
+        'websockets<9',  # hbmqtt currently (2021-06-07) not compatible with >=9
         'sanic',
         'bitstruct',
         'attrs>=17.3.0',
@@ -27,6 +27,7 @@ setup(
         'pytest-asyncio',
         'pytest-mock',
         'jsonpatch',
-        'freezegun',
+        'freezegun<=1.0.0',  # https://github.com/spulec/freezegun/issues/401
+        'sanic[test]',
     ],
 )

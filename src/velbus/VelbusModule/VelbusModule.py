@@ -207,7 +207,8 @@ class VelbusModule:
             module_path.append('')
 
         try:
-            return self.lookup_method(module_path[0], request.method)(
+            method = self.lookup_method(module_path[0], request.method)
+            return method(
                 path_info=module_path[1],
                 request=request,
                 bus=bus,
