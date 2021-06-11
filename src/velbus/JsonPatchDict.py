@@ -51,7 +51,7 @@ class JsonPatchOperation:
 
         if isinstance(self.value, dict):
             for k, v in self.value.items():
-                sub_op = JsonPatchOperation(self.op, [*self.path, k], v)
+                sub_op = JsonPatchOperation(self.op, [*self.path, str(k)], v)
                 for sub_sub_op in sub_op.decompose():
                     yield sub_sub_op
         else:
