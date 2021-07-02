@@ -67,6 +67,10 @@ class VelbusFrame:
             pass
 
         # attempt to decode
+        # TODO: fix this
+        # Velbus messages CAN NOT be decoded without context. Depending on the
+        # type of the module, the same bytes have different meaning.
+        # e.g. command 0xEE is decoded differently from an VMB1LED vs VMBDALI
         try:
             if len(data) == 0:
                 if rtr:

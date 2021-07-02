@@ -31,5 +31,14 @@ class VMBDALI(NestedAddressVelbusModule):
 
 
 class VMBDALIChannel(VelbusModuleChannel):
+    """
+    VMBDALI channel
+
+    state = {
+    }
+    """
     def message(self, vbm: VelbusFrame):
+        # TODO: process relevant messages for state
         pass
+
+    # TODO: add methods

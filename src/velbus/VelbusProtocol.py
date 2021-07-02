@@ -108,6 +108,10 @@ class VelbusProtocol(asyncio.Protocol):
         if VelbusProtocol.serial_client != self:  # don't loop back
             VelbusProtocol.serial_client.transport.write(data)
             await asyncio.sleep(8/9600 * len(data) * 2)
+            # Sleep to make sure we never overflow the USB/RS232-to-Velbus-module's buffer
+            # There is no reliable way to flow-control this:
+            # The module can send an 'Receive buffer full', but by then it's too late
+            # There is no way to know how many bytes/frames can be safely sent without overflowing the buffer
 
         for c in VelbusProtocol.tcp_clients:
             if c != self:  # Don't loop back
