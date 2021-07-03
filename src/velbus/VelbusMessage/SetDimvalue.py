@@ -21,3 +21,19 @@ class SetDimvalue(VelbusMessage):
 
     dimspeed: UInt(16) = 0
     """contains a 16-bit time in seconds needed for dimming to the desired value"""
+
+
+@attr.s(slots=True, auto_attribs=True)
+class SetDimvalue_VMBDALI(VelbusMessage):
+    _priority: UInt(2) = 0
+
+    class Command(Enum(8)):
+        SetDimvalue = 0x07
+    _command: Command = Command.SetDimvalue
+
+    channel: UInt(8) = 1
+
+    dimvalue: UInt(8) = 0
+    """0-254, 255 means keep current value"""
+
+    _dont_care: UInt(16) = 0

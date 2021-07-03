@@ -71,3 +71,19 @@ Debugging tips
 --------------
 
 You can fake a serial port with `socat`: `socat -d -d PTY -`
+
+
+Design considerations
+=====================
+
+* VelbusMessages could also be dataclasses.
+  They are currently slotted attr-classes for performance reasons:
+  A simple serialize-deserialize roundtrip with timeit gives:
+  
+   - 23.09 seconds for dataclass
+   - 20.17 seconds for attrs
+   - 19.73 seconds for slotted attrs
+   
+* bit manipulation is done via bitstrings.
+  It's significantly faster than bitstruct.
+  

@@ -70,7 +70,9 @@ class VelbusFrame:
         # TODO: fix this
         # Velbus messages CAN NOT be decoded without context. Depending on the
         # type of the module, the same bytes have different meaning.
-        # e.g. command 0xEE is decoded differently from an VMB1LED vs VMBDALI
+        # e.g.
+        #   * command 0xEE is decoded differently from an VMB1LED vs VMBDALI
+        #   * SetDimvalue (0x07) has either an Index(8) channel (VMB4DC) or an UInt(8) (VMBDALI)
         try:
             if len(data) == 0:
                 if rtr:

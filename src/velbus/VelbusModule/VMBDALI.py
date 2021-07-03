@@ -10,7 +10,7 @@ from . import VelbusModule
 from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
 from ..VelbusMessage.ModuleInfo.VMBDALI import VMBDALI as VMBDALI_MI
 from ..VelbusMessage.VelbusFrame import VelbusFrame
-from ..VelbusMessage.SetDimvalue import SetDimvalue
+from ..VelbusMessage.SetDimvalue import SetDimvalue_VMBDALI
 from ..VelbusMessage.DimmercontrollerStatus import DimmercontrollerStatus
 from ..VelbusProtocol import VelbusProtocol, VelbusDelayedHttpProtocol
 from .. import HttpApi
@@ -75,19 +75,17 @@ class VMBDALIChannel(VelbusModuleChannel):
     async def delayed_call(self, dim_step: DimStep) -> typing.Any:
         bus = VelbusDelayedHttpProtocol(original_timestamp=HttpApi.sanic_request_datetime.get(),
                                         request=HttpApi.sanic_request.get())
-        _ = await bus.velbus_query(
+        _ = await bus.process_message(
             VelbusFrame(
                 address=self.address,
-                message=SetDimvalue(
+                message=SetDimvalue_VMBDALI(
                     channel=self.channel,
                     dimvalue=dim_step.dimvalue,
-                    dimspeed=0,  # ignored
                 ),
             ),
-            DimmercontrollerStatus,
-            additional_check=(lambda vbm: vbm.message.channel == self.channel),
         )
-        # TODO BUG: VMBDALI does *NOT* respond after a SetDimvalue()
+        # VMBDALI does not respond to SetDimvalue
+        # TODO: verify that it actually worked?
 
         return dim_step.dimvalue
 
