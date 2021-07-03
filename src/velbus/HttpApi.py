@@ -281,6 +281,12 @@ def get_module(bus: VelbusProtocol, address: int) -> Awaitable[VelbusModule]:
     if address in modules:
         if modules[address].cancelled():
             del modules[address]
+
+        if modules[address].done() and isinstance(modules[address].exception(), CachedTimeoutError):
+            timeout_exc = modules[address].exception()  # type: CachedTimeoutError
+            if datetime.datetime.utcnow() - timeout_exc.timestamp > datetime.timedelta(minutes=1):
+                del modules[address]
+
     if address not in modules:
         modules[address] = asyncio.ensure_future(get_module_fresh(bus, address))
 
