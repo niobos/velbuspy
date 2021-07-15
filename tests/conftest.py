@@ -95,7 +95,11 @@ def mock_velbus(request):
             if data_is_expected:
                 next_conversation = self.parent.conversation_to_happen.pop(0)
                 if next_conversation[1] is not None:
-                    self.queue_read(next_conversation[1])
+                    if isinstance(next_conversation[1], list):
+                        for msg in next_conversation[1]:
+                            self.queue_read(msg)
+                    else:
+                        self.queue_read(next_conversation[1])
             else:
                 self.parent.unexpected_messages.append(data)
                 # don't answer
@@ -152,9 +156,14 @@ def mock_velbus(request):
                 if not isinstance(exchange[0], bytes) and not isinstance(exchange[0], bytearray) \
                         and not callable(exchange[0]):
                     raise ValueError(f"Invalid conversation, expected bytes or callable in exchange {index}, rx")
-                if not isinstance(exchange[1], bytes) and not isinstance(exchange[1], bytearray) \
-                        and not exchange[1] is None:
-                    raise ValueError(f"Invalid conversation, expected bytes or None in exchange {index}, tx")
+                if isinstance(exchange[1], bytes) or isinstance(exchange[1], bytearray) or exchange[1] is None:
+                    pass  # OK
+                elif isinstance(exchange[1], list):
+                    for response in exchange[1]:
+                        if not isinstance(response, bytes) and not isinstance(response, bytearray):
+                            raise ValueError(f"Invalid conversation, expected (list of) bytes or None in exchange {index}, tx")
+                else:
+                    raise ValueError(f"Invalid conversation, expected (list of) bytes or None in exchange {index}, tx")
 
             self.conversation_to_happen = conversation
 

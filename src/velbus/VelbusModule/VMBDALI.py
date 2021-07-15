@@ -11,8 +11,9 @@ from ..VelbusMessage.ModuleInfo.ModuleInfo import ModuleInfo
 from ..VelbusMessage.ModuleInfo.VMBDALI import VMBDALI as VMBDALI_MI
 from ..VelbusMessage.VelbusFrame import VelbusFrame
 from ..VelbusMessage.SetDimvalue import SetDimvalue_VMBDALI
-from ..VelbusMessage.DimmercontrollerStatus import DimmercontrollerStatus
-from ..VelbusProtocol import VelbusProtocol, VelbusDelayedHttpProtocol
+from ..VelbusMessage.DaliDeviceSettingsRequest import DaliDeviceSettingsRequest
+from ..VelbusMessage.DaliDeviceSettings import DaliDeviceSettings
+from ..VelbusProtocol import VelbusProtocol, VelbusDelayedHttpProtocol, VelbusHttpProtocol
 from .. import HttpApi
 
 
@@ -70,7 +71,13 @@ class VMBDALIChannel(VelbusModuleChannel):
     """
     def message(self, vbm: VelbusFrame):
         # TODO: process relevant messages for state
+        # VMBDALI does not seem to send much relevant info...
         pass
+
+        # interesting messages are
+        # [e8 <dali_addr> 1a <current dim value>]
+        #   triggered by [e7 <dali_addr> 00] (from cache, estimated)
+        #             or [e7 <dali_addr> 01] (polled over DALI)
 
     async def delayed_call(self, dim_step: DimStep) -> typing.Any:
         bus = VelbusDelayedHttpProtocol(original_timestamp=HttpApi.sanic_request_datetime.get(),
@@ -88,6 +95,56 @@ class VMBDALIChannel(VelbusModuleChannel):
         # TODO: verify that it actually worked?
 
         return dim_step.dimvalue
+
+    async def dimvalue_GET(self,
+                           path_info: str,
+                           request: sanic.request,
+                           bus: VelbusProtocol,
+                           ) -> sanic.response.HTTPResponse:
+        del request  # use HttpApi.sanic_request.get() instead
+        del bus
+        bus = VelbusHttpProtocol(HttpApi.sanic_request.get())
+
+        if path_info != '':
+            return sanic.response.text('Not found', status=404)
+
+        message = DaliDeviceSettingsRequest(
+            channel=self.channel,
+            source=DaliDeviceSettingsRequest.Source.Device,
+        )
+        resp = await bus.velbus_query(
+            VelbusFrame(
+                address=self.address,
+                message=message
+            ),
+            DaliDeviceSettings,
+            additional_check=lambda vbm: vbm.message.setting == DaliDeviceSettings.Setting.ActualLevel
+        )
+        return sanic.response.json(resp.message.setting_value.level)
+
+    async def dimvalue_PUT(self,
+                           path_info: str,
+                           request: sanic.request,
+                           bus: VelbusProtocol
+                           ) -> sanic.response.HTTPResponse:
+        """
+        Set the dim value
+        """
+        try:
+            resp = await self.e_dimvalue_PUT(
+                path_info=path_info,
+                request=request,
+                bus=bus,
+                allow_simulated_behaviour=False,
+            )
+
+            if resp.status == 202:
+                # make this HTTP request synchroneous
+                await self.delayed_calls[0].future
+                resp.status = 200
+            return resp
+        except NonNative:
+            return sanic.response.text('Bad Request: non-native request on native endpoint', 400)
 
     async def e_dimvalue_PUT(self,
                              path_info: str,
