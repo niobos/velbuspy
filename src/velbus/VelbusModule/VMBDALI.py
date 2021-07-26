@@ -96,31 +96,34 @@ class VMBDALIChannel(VelbusModuleChannel):
 
         return dim_step.dimvalue
 
-    async def dimvalue_GET(self,
-                           path_info: str,
-                           request: sanic.request,
-                           bus: VelbusProtocol,
-                           ) -> sanic.response.HTTPResponse:
-        del request  # use HttpApi.sanic_request.get() instead
-        del bus
-        bus = VelbusHttpProtocol(HttpApi.sanic_request.get())
-
-        if path_info != '':
-            return sanic.response.text('Not found', status=404)
-
-        message = DaliDeviceSettingsRequest(
-            channel=self.channel,
-            source=DaliDeviceSettingsRequest.Source.Device,
-        )
-        resp = await bus.velbus_query(
-            VelbusFrame(
-                address=self.address,
-                message=message
-            ),
-            DaliDeviceSettings,
-            additional_check=lambda vbm: vbm.message.setting == DaliDeviceSettings.Setting.ActualLevel
-        )
-        return sanic.response.json(resp.message.setting_value.level)
+    # Don't do this (yet). This may hang the VMBDALI module if the DALI-address is unreachable
+    # async def dimvalue_GET(self,
+    #                        path_info: str,
+    #                        request: sanic.request,
+    #                        bus: VelbusProtocol,
+    #                        ) -> sanic.response.HTTPResponse:
+    #     del request  # use HttpApi.sanic_request.get() instead
+    #     del bus
+    #     bus = VelbusHttpProtocol(HttpApi.sanic_request.get())
+    #
+    #     if path_info != '':
+    #         return sanic.response.text('Not found', status=404)
+    #
+    #     message = DaliDeviceSettingsRequest(
+    #         channel=self.channel,
+    #         source=DaliDeviceSettingsRequest.Source.Device,
+    #     )
+    #     resp = await bus.velbus_query(
+    #         VelbusFrame(
+    #             address=self.address,
+    #             message=message
+    #         ),
+    #         DaliDeviceSettings,
+    #         # WARNING: this hangs the VMBDALI if the specified DALI-address
+    #         #          is not responding. Only a module reset will resolve this.
+    #         additional_check=lambda vbm: vbm.message.setting == DaliDeviceSettings.Setting.ActualLevel
+    #     )
+    #     return sanic.response.json(resp.message.setting_value.level)
 
     async def dimvalue_PUT(self,
                            path_info: str,
