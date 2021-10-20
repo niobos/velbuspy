@@ -134,9 +134,17 @@ for uri in args.mqtt:
     match = re.fullmatch("(?P<proto>[a-z]+)://(?P<host>[^/]+)(?P<topic>/.*)", uri)
     if not match:
         raise ValueError(f"Invalid MQTT URI `{uri}`")
-    mqtt_uri = f"{match.group('proto')}://{match.group('host')}"
+
+    host = match.group('host')
+    if ':' in host:
+        host, port = host.split(':')
+        port = int(port)
+    else:
+        port = 1883
+
+    mqtt_uri = f"{match.group('proto')}://{host}:{port}"
     mqtt_topic = match.group('topic')[1:]
-    sync = MqttStateSync(mqtt_uri=mqtt_uri, mqtt_topic_prefix=mqtt_topic)
+    sync = MqttStateSync(mqtt_host=host, mqtt_port=port, mqtt_topic_prefix=mqtt_topic)
     asyncio.get_event_loop().run_until_complete(sync.connect())  # may raise
     logger.info(f"Connected to MQTT {mqtt_uri}, topic prefix {mqtt_topic}")
     HttpApi.mqtt_sync_clients.add(sync)

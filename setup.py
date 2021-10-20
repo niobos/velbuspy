@@ -10,14 +10,14 @@ setup(
     python_requires=">=3.7",
     install_requires=[
         'pyserial-asyncio',
-        'websockets<9',  # hbmqtt currently (2021-06-07) not compatible with >=9
+        'websockets',
         'sanic',
         'bitstruct',
         'attrs>=17.3.0',
         'structattr',
         'sortedcontainers',
         'python-dateutil ',
-        'hbmqtt',
+        'paho-mqtt',
     ],
     setup_requires=[
         'pytest-runner'
