@@ -46,6 +46,7 @@ async def test_type(generate_sanic_request, mock_velbus, module_address):
     mock_velbus.assert_conversation_happened_exactly()
 
 
+@pytest.mark.xfail
 @pytest.mark.asyncio
 async def test_dimvalue_GET(generate_sanic_request, mock_velbus, module_address, addr_channel):
     level = 123
