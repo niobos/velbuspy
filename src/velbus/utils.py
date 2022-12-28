@@ -1,6 +1,5 @@
 import os
 import typing
-import sanic.request
 
 
 def list_modules(path, recurse=True):
@@ -57,31 +56,3 @@ def update_dict_paths(d: dict, updates: typing.Iterable) -> dict:
     for update in updates:
         update_dict_path(d, update[0], update[1])
     return d
-
-
-def cache_control_max_age(request: sanic.request.Request) -> typing.Optional[int]:
-    """
-    Extract the requested cache Max-age from a request, if any
-    """
-    headers_lower = {}
-    for k, v in request.headers.items():
-        headers_lower[k.lower()] = v
-
-    try:
-        cc = headers_lower['cache-control']
-    except KeyError:
-        return None
-
-    directives = {}
-    for directive in cc.split(','):
-        directive = directive.strip().lower()
-        if '=' in directive:
-            k, v = directive.split('=', 1)
-            directives[k] = v
-        else:
-            directives[directive] = None
-
-    try:
-        return int(directives['max-age'])
-    except KeyError:
-        return None

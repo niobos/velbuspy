@@ -1,32 +1,17 @@
 import argparse
 import logging
-import re
 import signal
 import time
 import asyncio
 
-import datetime
-
-import os
 import serial
 import serial_asyncio
-
-from sanic import Sanic
-import sanic.response
 
 from .VelbusMessage.VelbusFrame import VelbusFrame
 from .VelbusMessage.InterfaceStatusRequest import InterfaceStatusRequest
 from .VelbusProtocol import VelbusProtocol, VelbusSerialProtocol, VelbusTcpProtocol, format_sockaddr
-from .CachedException import CachedTimeoutError
-from . import HttpApi
-from .mqtt import MqttStateSync
 
 from .VelbusMessage._registry import command_registry
-from .VelbusMessage.ModuleInfo._registry import module_type_registry
-
-__import__('VelbusModule', globals(), level=1, fromlist=['*'])
-# ^^^ from .VelbusModule import *    , but without polluting the namespace
-from .VelbusModule._registry import module_registry
 
 
 parser = argparse.ArgumentParser(
@@ -34,12 +19,8 @@ parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter,
 )
 parser.add_argument('--tcp-port', help="TCP port to listen on", type=int, default=8445)
-parser.add_argument('--static-dir', help="Directory to serve under /static the API", type=str,
-                    default='{}/static'.format(os.path.dirname(__file__)))
 parser.add_argument('--logfile', help="Log to the given file", type=str)
 parser.add_argument('--debug', help="Enable debug mode", action='store_true')
-parser.add_argument('--mqtt', type=str, default=None, action='append',
-                    help="MQTT URL & topic prefix to connect to (0 or more). e.g. mqtt://localhost/bus/velbus")
 parser.add_argument('serial_port', help="Serial port to open")
 
 args = parser.parse_args()
@@ -72,16 +53,6 @@ logger.info("Loaded VelbusMessage decoder for:")
 for cmd in sorted(command_registry.keys()):
     for cls in command_registry[cmd]:
         logger.info(" - 0x{cmd:02x} {cls}".format(cmd=cmd, cls=cls.__name__))
-
-logger.info("Loaded ModuleType decoder for:")
-for mod in sorted(module_type_registry.keys()):
-    for cls in module_type_registry[mod]:
-        logger.info(" - {mod:02x} {cls}".format(mod=mod, cls=cls.__name__))
-
-logger.info("Loaded Module managers for:")
-for name in sorted(module_registry.keys(), key=lambda t: t.__name__):
-    for cls in module_registry[name]:
-        logger.info(" - {mod} -> {handler}".format(mod=name.__name__, handler=cls.__name__))
 
 
 loop = asyncio.get_event_loop()
@@ -127,53 +98,6 @@ tcpserver = loop.run_until_complete(
     loop.create_server(VelbusTcpProtocol, None, args.tcp_port, reuse_port=True))
 logger.info("Listening for TCP on {}".format(
     format_sockaddr(tcpserver.sockets[0].getsockname())))
-
-if args.mqtt is None:
-    args.mqtt = []
-for uri in args.mqtt:
-    match = re.fullmatch("(?P<proto>[a-z]+)://(?P<host>[^/]+)(?P<topic>/.*)", uri)
-    if not match:
-        raise ValueError(f"Invalid MQTT URI `{uri}`")
-    mqtt_uri = f"{match.group('proto')}://{match.group('host')}"
-    mqtt_topic = match.group('topic')[1:]
-    sync = MqttStateSync(mqtt_uri=mqtt_uri, mqtt_topic_prefix=mqtt_topic)
-    asyncio.get_event_loop().run_until_complete(sync.connect())  # may raise
-    logger.info(f"Connected to MQTT {mqtt_uri}, topic prefix {mqtt_topic}")
-    HttpApi.mqtt_sync_clients.add(sync)
-
-# Start up Web server
-app = Sanic(__name__, log_config={})
-app.config.LOGO = None
-httpserver = app.create_server(host="0.0.0.0", port=8080, return_asyncio_server=True)
-asyncio.get_event_loop().create_task(httpserver)
-
-
-logger.info("Serving /static from {}".format(args.static_dir))
-app.static('/static', args.static_dir)
-
-
-@app.route('/')
-async def index(request):
-    return sanic.response.redirect('/static/index.html')
-
-
-@app.exception(CachedTimeoutError)
-def cached_timeout(request, exception):
-    return sanic.response.text("timeout waiting for response\r\n",
-                               headers={
-                                   'Date': exception.timestamp.strftime("%a, %d %b %y %T GMT"),
-                                   'Age': int((datetime.datetime.utcnow() - exception.timestamp).total_seconds()),
-                               },
-                               status=504)
-
-@app.exception(TimeoutError)
-def timeout(request, exception):
-    return sanic.response.text("timeout waiting for response\r\n",
-                               status=504)
-
-
-HttpApi.add_routes(bus=internal, app=app)
-
 
 # Run loop
 try:

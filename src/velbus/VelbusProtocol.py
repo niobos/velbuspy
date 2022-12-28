@@ -237,24 +237,3 @@ class VelbusSerialProtocol(VelbusProtocol):
         self.paused = False
         for c in VelbusProtocol.tcp_clients:
             c.transport.resume_reading()
-
-
-class VelbusHttpProtocol(VelbusProtocol):
-    def __init__(self, request):
-        super().__init__(client_id="HTTP:{ip}:{port}{path}".format(
-            ip=request.ip,
-            port=request.port,
-            path=request.path
-        ))
-
-
-class VelbusDelayedProtocol(VelbusProtocol):
-    def __init__(self, original_protocol: VelbusProtocol):
-        super().__init__(client_id=f"DELAYED<{datetime.datetime.utcnow().isoformat()}>"
-                         f":{original_protocol.client_id}")
-
-
-class VelbusDelayedHttpProtocol(VelbusProtocol):
-    def __init__(self, original_timestamp: datetime.datetime, request):
-        super().__init__(client_id=f"DELAYED<{original_timestamp.isoformat()}>"
-                                   f":HTTP:{request.ip}:{request.port}{request.path}")
